@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   refresh:
+    if: vars.MEDCHECK_UPDATES_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 330
     env:
