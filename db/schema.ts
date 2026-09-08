@@ -14,3 +14,10 @@ export const cvLinks = sqliteTable('cv_links', { gen: text().notNull(), id: inte
 export const dpdStaging = sqliteTable('dpd_staging', { gen: text().notNull(), id: text().notNull(), data: text().notNull(), hash: text().notNull(), versionData: text().notNull() },t=>[primaryKey({columns:[t.gen,t.id]})]);
 
 export const sourceBudget = sqliteTable('source_budget', { key: text().primaryKey(), window: integer().notNull(), count: integer().notNull() });
+
+// One bounded check record per source; dataset publication dates remain in source_state.
+export const updateRuns = sqliteTable('update_runs', {
+  source: text().primaryKey(), runId: text().notNull(), started: text().notNull(), heartbeat: text().notNull(),
+  finished: text(), lastSuccess: text(), outcome: text().notNull(), phase: text().notNull(),
+  error: text(), cursor: text().notNull().default(''), details: text().notNull().default('{}'),
+});

@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { arr, normalize, parseSPL, sourceDate, unzipLabel } from './core';
 import type { Product, ProductVersion, Result, SourceStatus } from './types';
 import { sources } from './sources';
+import { checkStatus, type UpdateRun } from './updates';
 
 export const db=()=>env.DB;
 export const now=()=>new Date().toISOString();
@@ -109,7 +110,16 @@ export async function currentVersion(p:Product){if(p.market==='CA'){await caProd
 export async function sourceStatuses():Promise<SourceStatus[]>{
   const state=await db().prepare('SELECT * FROM source_state').all<{id:string;generation:string;lastSuccess:string;coverage:string;error:string}>();
   const retrievals=await db().prepare('SELECT source,MAX(fetched) AS fetched FROM cache GROUP BY source').all<{source:string;fetched:number}>();
-  return sources.map(s=>{const retrieved=retrievals.results.find(r=>r.source===s.id);if(retrieved)s={...s,lastSuccessAt:new Date(retrieved.fetched).toISOString()};const current=state.results.find(r=>r.id===s.id);if(current)return{...s,status:current.generation?'Imported dataset available':s.status,lastSuccessAt:current.lastSuccess||undefined,coverageThrough:current.coverage||undefined,lastError:current.error||undefined};return s.id==='cv'?{...s,status:'Dataset not imported yet'}:s;});
+  const checks=await db().prepare('SELECT * FROM update_runs').all<UpdateRun>();
+  return sources.map(s=>{
+    const retrieved=retrievals.results.find(r=>r.source===s.id), current=state.results.find(r=>r.id===s.id), check=checks.results.find(r=>r.source===s.id);
+    let item:SourceStatus={...s};
+    if(retrieved)item.lastSuccessAt=new Date(retrieved.fetched).toISOString();
+    if(current)item={...item,status:current.generation?'Imported dataset available':s.status,lastSuccessAt:current.lastSuccess||undefined,coverageThrough:current.coverage||undefined,lastError:current.error||undefined};
+    else if(s.id==='cv')item.status='Dataset not imported yet';
+    if(check)item={...item,...checkStatus(check)};
+    return item;
+  });
 }
 export async function aliases(p:Product):Promise<{terms:string[];rxcui?:string;history?:unknown}>{
   const terms=[p.name,p.genericName,...p.ingredients.flatMap(i=>[i.name,i.basis||''])].map(normalize).filter(Boolean);
@@ -131,4 +141,3 @@ export async function searchCA(query:string,page:number):Promise<Result<Product[
     return {...result(rows.results.map(r=>JSON.parse(r.data)),['The live Canadian service could not be reached. Showing the last successfully imported product snapshot.'],'stale'),fetchedAt:state.lastSuccess,sourceAsOf:state.coverage,total:count?.n||0,page,hasMore:page*8<(count?.n||0)};
   }
 }
-

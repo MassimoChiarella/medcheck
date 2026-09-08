@@ -33,6 +33,8 @@ export type SourceStatus = {
   id: string; name: string; region: string; description: string; url: string;
   access: 'integrated' | 'external'; status: string; coverageThrough?: string;
   lastSuccessAt?: string; lastError?: string; termsUrl?: string;
+  lastAttemptAt?: string; lastCheckedAt?: string; lastCheckSuccessAt?: string;
+  checkOutcome?: 'running' | 'updated' | 'unchanged' | 'failed' | 'interrupted'; checkPhase?: string; checkError?: string;
 };
 export type Result<T> = {
   data: T; completeness: Completeness; notes: string[]; fetchedAt: string;

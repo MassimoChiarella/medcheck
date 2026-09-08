@@ -17,7 +17,8 @@
     "dev:worker": "vinext dev",
     "setup": "node scripts/local.mjs setup",
     "data:update": "node scripts/local.mjs update",
-    "data:status": "node scripts/local.mjs status"
+    "data:status": "node scripts/local.mjs status",
+    "test:integration": "node tests/run_integration.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",

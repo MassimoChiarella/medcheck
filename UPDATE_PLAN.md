@@ -8,10 +8,10 @@ Execution order follows the dependencies below. Each completed phase is committe
 - [ ] Preserve existing checks and validate each incremental change before pushing it.
 
 ## 1. Reliable source check status
-- [ ] 1.1 Add bounded, durable source check records with attempt, heartbeat, success, outcome and phase.
-- [ ] 1.2 Start checks before downloads; record failure at every stage and recognize interrupted checks.
-- [ ] 1.3 Expose successful unchanged checks separately from dataset coverage and publication dates.
-- [ ] 1.4 Test authentication, overlapping/stale attempts, failures, unchanged results and last-good data.
+- [x] 1.1 Add bounded, durable source check records with attempt, heartbeat, success, outcome and phase.
+- [x] 1.2 Start checks before downloads; record failure at every stage and recognize interrupted checks.
+- [x] 1.3 Expose successful unchanged checks separately from dataset coverage and publication dates.
+- [x] 1.4 Test authentication, overlapping/stale attempts, failures, unchanged results and last-good data.
 
 Acceptance: an operator can distinguish never checked, running, unchanged, updated, failed and interrupted. Failure messages do not expose credentials or replace usable evidence.
 
@@ -29,7 +29,7 @@ Acceptance: an unchanged validated release needs no index rebuild or republishin
 - [ ] 3.3 Resume interrupted cycles and bound work per request and per scheduled run.
 - [ ] 3.4 Test shared labels, throttling, transient/persistent failures, process interruption and independent source outcomes.
 
-Acceptance: successful work survives retries, failed labels remain pending, and a incomplete cycle cannot be reported as a successful complete refresh.
+Acceptance: successful work survives retries, failed labels remain pending, and an incomplete cycle cannot be reported as a successful complete refresh.
 
 ## 4. Storage admission and conservative cleanup
 - [ ] 4.1 Measure D1 capacity and reserve replacement headroom before admitting an import.
@@ -53,3 +53,5 @@ Acceptance: failures are visible and recoverable, real source checks pass, the p
 
 - Baseline: `3e592d5`; complete local/private Canadian import already validated before this work.
 - Planned push boundaries: plan; source-status contract; importer lifecycle; release/cache optimization; resumable refresh; storage safeguards; unattended workflow; release evidence. Boundaries may be combined only when needed to keep a commit coherent.
+
+- Phase 1: durable check lifecycle, source-directory status and isolated HTTP regressions passed. Existing import transaction tests also passed; interrupted checks retain previous data and success timestamps.

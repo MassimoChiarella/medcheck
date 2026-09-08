@@ -1,11 +1,11 @@
 """Run only against a fresh isolated local Worker: python tests/integration.py URL TOKEN.
 Synthetic fixtures validate import transactions. NEVER use against review/live data.
 """
-import hashlib,json,sys,urllib.request,urllib.error
+import hashlib,json,sys,urllib.request,urllib.error,os
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from import_canada import post
-base=sys.argv[1];token=sys.argv[2]
+base=os.environ['MEDCHECK_URL'];token=os.environ['MEDCHECK_IMPORT_TOKEN']
 assert base in ('http://localhost:3002','http://127.0.0.1:3002'), 'Isolated local test port required'
 def send(**body):return post(base,token,body)
 def rejected(**body):

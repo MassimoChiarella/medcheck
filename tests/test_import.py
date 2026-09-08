@@ -1,4 +1,6 @@
 import importlib.util,io,pathlib,unittest
+import sys
+sys.path.insert(0,str(pathlib.Path(__file__).parents[1]/'scripts'))
 spec=importlib.util.spec_from_file_location('importer',pathlib.Path(__file__).parents[1]/'scripts/import_canada.py');mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
 class ImportChecks(unittest.TestCase):
  def test_source_quoting_and_multiline(self):

@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { db, hash, loadLabel, now } from '@/lib/server';
+import { checkAction, UpdateConflict } from '@/lib/updates';
 
 // Fixed source tables only. The upload API never accepts SQL or arbitrary identifiers.
 const tables:Record<string,string[]>={
@@ -33,6 +34,7 @@ export async function POST(request:Request){
       await env.FILES.put(`raw-sources/${sourceHash}/${index}`,bytes,{customMetadata:{sha256:expected}});return Response.json({accepted:true,size});
     }
     const b=await body(request);const action=b.action;
+    const check=await checkAction(b);if(check)return check;
     if(action==='archive-status'||action==='archive-complete'){
       if(!/^[a-f0-9]{64}$/.test(b.hash))throw new Error('Invalid source hash.');const key=`raw-sources/${b.hash}/manifest.json`;
       if(action==='archive-status')return Response.json({complete:!!await env.FILES.head(key)});
@@ -143,5 +145,5 @@ export async function POST(request:Request){
       return Response.json({deleted:r.meta.changes});
     }
     throw new Error('Unknown import action.');
-  }catch(e){const message=e instanceof Error?e.message:'Import failed. Previous generation retained.';return Response.json({error:message},{status:/D1_ERROR|R2_ERROR|internal error/i.test(message)?503:400});}
+  }catch(e){const message=e instanceof Error?e.message:'Import failed. Previous generation retained.';return Response.json({error:message},{status:e instanceof UpdateConflict?409:/D1_ERROR|R2_ERROR|internal error/i.test(message)?503:400});}
 }

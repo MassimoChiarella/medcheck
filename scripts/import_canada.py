@@ -3,6 +3,7 @@
 No paid services, source sampling, or schema changes are performed by this script.
 """
 import argparse, hashlib, io, json, os, pathlib, re, sqlite3, sys, time, urllib.error, urllib.request, urllib.parse, zipfile
+from update_run import SourceCheck
 
 TRANSFORM_VERSION = '1'
 SOURCE = 'https://www.canada.ca/content/dam/hc-sc/migration/hc-sc/dhp-mps/alt_formats/zip/medeff/databasdon/extract_extrait.zip'
@@ -196,7 +197,7 @@ def upload(path,manifest,base,token):
     cleanup(base,token)
     gen=manifest['id'];post(base,token,{'action':'begin',**manifest})
     status=post(base,token,{'action':'status','id':gen})
-    if status['run']['state']=='active':print('Current dataset already active.');return
+    if status['run']['state']=='active':print('Current dataset already active.');return False
     if status['run']['state']!='staging':raise RuntimeError('This source generation was retired or rolled back; a scheduled run cannot reactivate it. Await a newer release or explicitly restore a retained generation.')
     last={x['tableName']:x for x in status['batches']};batch_size=12000
     def upload_table(table):
@@ -215,6 +216,7 @@ def upload(path,manifest,base,token):
         with ThreadPoolExecutor(max_workers=3) as pool:list(pool.map(upload_table,TABLES))
         response=post(base,token,{'action':'promote','id':gen});print(json.dumps(response),flush=True)
         cleanup(base,token)
+        return True
     except Exception as e:
         try:post(base,token,{'action':'fail','id':gen,'error':str(e)[:500]})
         except Exception:pass
@@ -241,10 +243,17 @@ def main():
     if args.upload or args.refresh or args.refresh_only:
         try:base=validate_target(base,token)
         except ValueError as error:parser.error(str(error))
-    if args.refresh_only:refresh(base,token);return
-    archive=args.archive or download(args.workdir/'extract_extrait.zip');output=args.workdir/'canada.sqlite';manifest=build(archive,output)
-    if args.upload:
-        archive_source(archive,base,token,SOURCE)
-        upload(output,manifest,base,token)
-    if args.refresh:refresh(base,token)
+    if not args.refresh_only:
+        if args.upload:
+            with SourceCheck('cv',base,token,post) as check:
+                check.phase('downloading');archive=args.archive or download(args.workdir/'extract_extrait.zip')
+                check.phase('validating');output=args.workdir/'canada.sqlite';manifest=build(archive,output)
+                check.phase('archiving');archive_source(archive,base,token,SOURCE)
+                check.phase('importing');changed=upload(output,manifest,base,token)
+                check.outcome='updated' if changed else 'unchanged'
+        else:
+            archive=args.archive or download(args.workdir/'extract_extrait.zip');build(archive,args.workdir/'canada.sqlite')
+    if args.refresh or args.refresh_only:
+        with SourceCheck('dailymed',base,token,post) as check:
+            check.phase('refreshing');refresh(base,token)
 if __name__=='__main__':main()

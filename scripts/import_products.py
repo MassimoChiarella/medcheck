@@ -2,6 +2,7 @@
 """Snapshot the complete Health Canada human medication catalogue."""
 import argparse,collections,datetime,hashlib,json,os,pathlib,time,urllib.request
 from import_canada import post,archive_source,validate_target
+from update_run import SourceCheck
 ENDPOINTS=['drugproduct','activeingredient','form','route','status']
 
 def collect(directory,offline):
@@ -46,15 +47,28 @@ def main():
         base=os.getenv('MEDCHECK_URL','');token=os.getenv('MEDCHECK_IMPORT_TOKEN','')
         try:base=validate_target(base,token)
         except ValueError as error:parser.error(str(error))
-    values=collect(args.directory,args.offline);entries=build(values)
+    if args.upload:
+        with SourceCheck('dpd',base,token,post) as check:import_products(args,base,token,check)
+    else:import_products(args)
+
+def import_products(args,base=None,token=None,check=None):
+    if check:check.phase('downloading')
+    values=collect(args.directory,args.offline)
+    if check:check.phase('validating')
+    entries=build(values)
     observed=datetime.datetime.now(datetime.timezone.utc).isoformat();digest=hashlib.sha256(json.dumps(entries,sort_keys=True).encode()).hexdigest()
     print(f'{len(entries):,} human products validated; snapshot {observed}',flush=True)
     if not args.upload:return
+    if check:check.phase('archiving')
     for name in ENDPOINTS:archive_source(args.directory/(name+'.json'),base,token,'https://health-products.canada.ca/api/drug/'+name+'/?lang=en&type=json')
     # Run identity includes observation time so A→B→A remains a new occurrence.
     generation=hashlib.sha256((digest+observed).encode()).hexdigest()[:16]
+    if check:check.phase('importing')
     run=post(base,token,{'action':'dpd-begin','id':generation,'count':len(entries),'observedAt':observed,'hash':digest})
-    if run['state']=='active':print('Canadian catalogue unchanged; prior complete snapshot retained.');return
+    if run['state']=='active':
+        print('Canadian catalogue unchanged; prior complete snapshot retained.')
+        if check:check.outcome='unchanged'
+        return
     generation=run['id']
     for i in range(0,len(entries),400):
         post(base,token,{'action':'dpd','id':generation,'entries':entries[i:i+400]})

@@ -2,6 +2,8 @@
 import importlib.util,pathlib,unittest,urllib.request,urllib.error,threading,json
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from unittest.mock import patch
+import sys
+sys.path.insert(0,str(pathlib.Path(__file__).parents[1]/'scripts'))
 spec=importlib.util.spec_from_file_location('destination_importer',pathlib.Path(__file__).parents[1]/'scripts/import_canada.py')
 mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
 

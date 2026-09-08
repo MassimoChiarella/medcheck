@@ -22,6 +22,13 @@
       "when": 1788826689954,
       "tag": "0002_sticky_mysterio",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788835506087,
+      "tag": "0003_warm_whiplash",
+      "breakpoints": true
     }
   ]
 }
