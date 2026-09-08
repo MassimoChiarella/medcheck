@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Snapshot the complete Health Canada human medication catalogue."""
 import argparse,collections,datetime,hashlib,json,os,pathlib,time,urllib.request
-from import_canada import post,archive_source
+from import_canada import post,archive_source,validate_target
 ENDPOINTS=['drugproduct','activeingredient','form','route','status']
 
 def collect(directory,offline):
@@ -42,11 +42,14 @@ def build(values):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--directory',type=pathlib.Path,default=pathlib.Path('work/dpd'));parser.add_argument('--offline',action='store_true');parser.add_argument('--upload',action='store_true');args=parser.parse_args()
+    if args.upload:
+        base=os.getenv('MEDCHECK_URL','');token=os.getenv('MEDCHECK_IMPORT_TOKEN','')
+        try:base=validate_target(base,token)
+        except ValueError as error:parser.error(str(error))
     values=collect(args.directory,args.offline);entries=build(values)
     observed=datetime.datetime.now(datetime.timezone.utc).isoformat();digest=hashlib.sha256(json.dumps(entries,sort_keys=True).encode()).hexdigest()
     print(f'{len(entries):,} human products validated; snapshot {observed}',flush=True)
     if not args.upload:return
-    base=os.environ['MEDCHECK_URL'];token=os.environ['MEDCHECK_IMPORT_TOKEN']
     for name in ENDPOINTS:archive_source(args.directory/(name+'.json'),base,token,'https://health-products.canada.ca/api/drug/'+name+'/?lang=en&type=json')
     # Run identity includes observation time so A→B→A remains a new occurrence.
     generation=hashlib.sha256((digest+observed).encode()).hexdigest()[:16]

@@ -2,7 +2,7 @@
 """Validate the complete Canada Vigilance extract; publish an atomic, resumable index.
 No paid services, source sampling, or schema changes are performed by this script.
 """
-import argparse, hashlib, io, json, os, pathlib, re, sqlite3, sys, time, urllib.error, urllib.request, zipfile
+import argparse, hashlib, io, json, os, pathlib, re, sqlite3, sys, time, urllib.error, urllib.request, urllib.parse, zipfile
 
 TRANSFORM_VERSION = '1'
 SOURCE = 'https://www.canada.ca/content/dam/hc-sc/migration/hc-sc/dhp-mps/alt_formats/zip/medeff/databasdon/extract_extrait.zip'
@@ -122,14 +122,33 @@ def build(archive_path, output):
     manifest={'id':gen,'hash':digest,'transform_version':TRANSFORM_VERSION,'cutoff':cutoff,'manifest':counts,'bytes':size,'batch_size':12000,'source_counts':source_counts,'source_url':SOURCE,'elapsed_seconds':round(time.monotonic()-started,2)}
     manifest_path.write_text(json.dumps(manifest,indent=2));print(json.dumps(manifest),flush=True);return manifest
 
+def validate_target(base,token):
+    """Authenticated imports target an explicit owner URL; never accept URL credentials."""
+    try:
+        url=urllib.parse.urlsplit(base)
+        port=url.port
+        valid_host=bool(url.hostname) and not any(c.isspace() for c in base)
+        local=url.scheme=='http' and url.hostname in ('localhost','127.0.0.1','::1') and port is not None
+        if not valid_host or (port is not None and port<1) or url.username or url.password or url.query or url.fragment or url.path not in ('','/') or not (url.scheme=='https' or local):raise ValueError()
+    except ValueError:raise ValueError('Use an HTTPS deployment origin or an explicit loopback HTTP port; no credentials, paths, queries or fragments in MEDCHECK_URL.') from None
+    if not isinstance(token,str) or len(token)<32 or any(c.isspace() for c in token):raise ValueError('A 32+ character import token without whitespace is required.')
+    return base.rstrip('/')
+
+class NoImportRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        raise urllib.error.HTTPError(req.full_url,code,'Authenticated import redirects are not allowed',headers,fp)
+
+IMPORT_HTTP=urllib.request.build_opener(NoImportRedirect())
+
 def post(base,token,payload):
+    base=validate_target(base,token)
     raw=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode()
     headers={'Content-Type':'application/json','Authorization':'Bearer '+token}
     # Private review deployments can use an existing owner-supplied Sites token.
     if os.getenv('SITES_AUTHORIZATION'):headers['OAI-Sites-Authorization']='Bearer '+os.environ['SITES_AUTHORIZATION']
     for attempt in range(5):
         try:
-            with urllib.request.urlopen(urllib.request.Request(base.rstrip('/')+'/api/import',data=raw,headers=headers),timeout=180) as response:return json.load(response)
+            with IMPORT_HTTP.open(urllib.request.Request(base+'/api/import',data=raw,headers=headers),timeout=180) as response:return json.load(response)
         except urllib.error.HTTPError as e:
             detail=e.read(2000).decode(errors='replace')
             if e.code not in (429,500,502,503,504):raise RuntimeError(f'Upload HTTP {e.code}: {detail}') from e
@@ -139,6 +158,7 @@ def post(base,token,payload):
         time.sleep(min(30,2**attempt))
 
 def archive_source(path,base,token,source_url):
+    base=validate_target(base,token)
     digest=hashlib.sha256()
     with open(path,'rb') as source:
         while chunk:=source.read(5*1024*1024):digest.update(chunk)
@@ -153,7 +173,7 @@ def archive_source(path,base,token,source_url):
             url=base.rstrip('/')+'/api/import?sourceHash='+full_hash+'&chunk='+str(index)
             for attempt in range(5):
                 try:
-                    with urllib.request.urlopen(urllib.request.Request(url,data=chunk,headers=headers),timeout=180) as response:json.load(response)
+                    with IMPORT_HTTP.open(urllib.request.Request(url,data=chunk,headers=headers),timeout=180) as response:json.load(response)
                     break
                 except (urllib.error.URLError,TimeoutError):
                     if attempt==4:raise
@@ -208,18 +228,19 @@ def cleanup(base,token):
 
 
 def refresh(base,token):
-    cursor=''
+    cursor='';failures=[]
     while True:
-        r=post(base,token,{'action':'refresh','cursor':cursor});print('Product refresh:',json.dumps(r),flush=True)
+        r=post(base,token,{'action':'refresh','cursor':cursor});print('Product refresh:',json.dumps(r),flush=True);failures.extend(r.get('failures',[]))
         if not r.get('hasMore'):break
         cursor=r['cursor']
+    if failures:raise RuntimeError(f'{len(failures)} indexed products could not be refreshed; previous records were retained.')
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--archive',type=pathlib.Path);parser.add_argument('--workdir',type=pathlib.Path,default=pathlib.Path('work/canada'));parser.add_argument('--upload',action='store_true');parser.add_argument('--refresh',action='store_true');parser.add_argument('--refresh-only',action='store_true');args=parser.parse_args();args.workdir.mkdir(parents=True,exist_ok=True)
     base=os.getenv('MEDCHECK_URL','');token=os.getenv('MEDCHECK_IMPORT_TOKEN','')
     if args.upload or args.refresh or args.refresh_only:
-        if not base or len(token)<32:parser.error('MEDCHECK_URL and a 32+ character MEDCHECK_IMPORT_TOKEN are required')
-        if not base.startswith('https://') and not re.fullmatch(r'http://(localhost|127\.0\.0\.1):\d+',base):parser.error('Use HTTPS except for localhost testing')
+        try:base=validate_target(base,token)
+        except ValueError as error:parser.error(str(error))
     if args.refresh_only:refresh(base,token);return
     archive=args.archive or download(args.workdir/'extract_extrait.zip');output=args.workdir/'canada.sqlite';manifest=build(archive,output)
     if args.upload:
