@@ -12,11 +12,12 @@
     "lint": "oxlint",
     "format": "oxfmt",
     "db:generate": "drizzle-kit generate",
-    "test": "node --experimental-strip-types --test tests/core.test.ts tests/local.test.mjs && python3 -m unittest discover -s tests -p \"test_*.py\"",
+    "test": "node --experimental-strip-types --test tests/core.test.ts tests/local.test.mjs tests/storage.test.ts && python3 -m unittest discover -s tests -p \"test_*.py\"",
     "typecheck": "tsc --noEmit",
     "dev:worker": "vinext dev",
     "setup": "node scripts/local.mjs setup",
     "data:update": "node scripts/local.mjs update",
+    "data:maintenance": "node scripts/local.mjs maintenance",
     "data:status": "node scripts/local.mjs status",
     "test:integration": "node tests/run_integration.mjs"
   },

@@ -1,4 +1,4 @@
-"""Run only against a fresh isolated local Worker: python tests/integration.py URL TOKEN.
+"""Run only against a fresh isolated local Worker: npm run test:integration.
 Synthetic fixtures validate import transactions. NEVER use against review/live data.
 """
 import hashlib,json,sys,urllib.request,urllib.error,os
@@ -42,6 +42,11 @@ for table,data in rows.items():send(action='batch',id=g2,table=table,batch=0,row
 send(action='promote',id=g2)
 assert send(action='rollback',id=g1)['rolledBack']
 rejected(action='promote',id=g2)
+rejected(action='cleanup',id=g2,table='cv_products')
+g3='3333333333333333'
+send(action='begin',**manifest(g3))
+for table,data in rows.items():send(action='batch',id=g3,table=table,batch=0,rows=data)
+send(action='promote',id=g3)
 send(action='cleanup',id=g2,table='cv_products')
 rejected(action='rollback',id=g2)
 p={'id':'CA:123','name':'TEST PRODUCT','genericName':'A','market':'CA','manufacturer':'TEST','strength':'1 mg','form':'Tablet','route':'Oral','identifiers':{'drugCode':123,'din':'00000123'},'ingredients':[{'name':'A','strength':'1 mg'}],'sourceUrl':'https://health-products.canada.ca/dpd-bdpp/info?lang=eng&code=123'}

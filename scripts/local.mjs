@@ -17,6 +17,7 @@ export function parseArgs(args) {
   const options = { command: args.shift() || 'dev', yes: false };
   for (let i = 0; i < args.length; i++) {
     const [key, inline] = args[i].split('=');
+    if (key === '--apply') { options.apply = true; continue; }
     if (key === '--yes') { options.yes = true; continue; }
     if (key === '--help') { options.command = 'help'; continue; }
     if (!['--data', '--updates', '--port'].includes(key)) throw new Error('Unknown option: ' + key);
@@ -24,7 +25,8 @@ export function parseArgs(args) {
     if (!value || value.startsWith('--')) throw new Error('Missing value for ' + key);
     options[key.slice(2)] = value;
   }
-  if (!['dev', 'setup', 'update', 'status', 'help'].includes(options.command)) throw new Error('Unknown local command.');
+  if (!['dev', 'setup', 'update', 'status', 'maintenance', 'help'].includes(options.command)) throw new Error('Unknown local command.');
+  if (options.apply && options.command !== 'maintenance') throw new Error('--apply is only valid for maintenance.');
   return validateSettings(options);
 }
 export function validateSettings(value) {
@@ -241,6 +243,7 @@ async function update(settings, token, env, py) {
       const disk = await statfs(ROOT);
       if (disk.bavail * disk.bsize < MIN_FREE) throw new Error('Complete imports require at least 10 GB free disk space. No data was truncated or removed.');
     }
+    await run(py[0], [...py.slice(1), 'scripts/maintain_storage.py', '--apply'], env);
     const steps = settings.data === 'full' ? [['Canadian catalogue', 'scripts/import_products.py', '--upload'], ['Canada Vigilance', 'scripts/import_canada.py', '--upload']] : [];
     steps.push(['Previously indexed US labels', 'scripts/import_canada.py', '--refresh-only']);
     for (const [name, ...args] of steps) {
@@ -268,7 +271,7 @@ async function update(settings, token, env, py) {
 export async function main(args = process.argv.slice(2)) {
   const options = parseArgs([...args]);
   if (options.command === 'help') {
-    console.log('npm run dev | setup | data:update | data:status\nOptions: --data=on-demand|full --updates=manual|daily --port=3000 --yes\nDaily updates run only while npm run dev is running. SETUP.md explains independent hosted schedules.'); return;
+    console.log('npm run dev | setup | data:update | data:status | data:maintenance\nMaintenance defaults to a dry run; use --apply to reclaim eligible staging artifacts.\nOptions: --data=on-demand|full --updates=manual|daily --port=3000 --yes\nDaily updates run only while npm run dev is running. SETUP.md explains independent hosted schedules.'); return;
   }
   const settingsPath = join(ROOT, 'work/local/settings.json');
   const existing = await readJson(settingsPath);
@@ -290,7 +293,10 @@ export async function main(args = process.argv.slice(2)) {
   const state = await readJson(join(ROOT, 'work/local/update-status.json'), {});
   const mustUpdate = options.command === 'update' || (settings.data === 'full' && (!state.lastSuccess || state.data !== 'full')) || isDue(settings, state);
   if (options.command !== 'dev') {
-    try { if (mustUpdate) await update(settings, token, env, py); }
+    try {
+      if (options.command === 'maintenance') await run(py[0], [...py.slice(1), 'scripts/maintain_storage.py', ...(options.apply ? ['--apply'] : [])], env);
+      else if (mustUpdate) await update(settings, token, env, py);
+    }
     finally {
       if (current.child) {
         current.child.kill('SIGTERM');

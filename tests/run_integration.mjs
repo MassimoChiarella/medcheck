@@ -28,7 +28,7 @@ try {
   const token = (await readFile(join(directory, '.dev.vars'), 'utf8')).match(/^IMPORT_TOKEN=(.*)$/m)[1];
   const testEnv = { ...localEnvironment(process.env, 3002, token), MEDCHECK_TEST_DIRECTORY: directory, MEDCHECK_TEST_NODE: process.execPath };
   const python = process.platform === 'win32' ? ['py', '-3'] : ['python3'];
-  const tests = process.argv.slice(2).length ? process.argv.slice(2) : ['tests/integration.py', 'tests/update_integration.py'];
+  const tests = process.argv.slice(2).length ? process.argv.slice(2) : ['tests/integration.py', 'tests/storage_integration.py'];
   for (const test of tests) {
     const child = spawn(python[0], [...python.slice(1), test], { cwd: directory, env: testEnv, stdio: 'inherit' });
     const [code] = await once(child, 'exit');

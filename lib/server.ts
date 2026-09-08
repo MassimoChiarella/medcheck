@@ -4,6 +4,7 @@ import { arr, normalize, parseSPL, sourceDate, unzipLabel } from './core';
 import type { Product, ProductVersion, Result, SourceStatus } from './types';
 import { sources } from './sources';
 import { checkStatus, type UpdateRun } from './updates';
+import { putArchive } from './storage';
 
 export const db=()=>env.DB;
 export const now=()=>new Date().toISOString();
@@ -55,7 +56,7 @@ export async function loadLabel(setid:string,version?:string,force=false){
     const url=version?new URL(`https://dailymed.nlm.nih.gov/dailymed/getFile.cfm?type=zip&setid=${setid}&version=${version}`):new URL(`https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/${setid}.xml`);
     const bytes=await fetchBytes(url);const xml=version?unzipLabel(bytes):new TextDecoder().decode(bytes);const parsed=parseSPL(xml,setid);const contentHash=await hash(bytes);
     if(version&&parsed.version!==version)throw new Error('The archive version did not match the request.');
-    await env.FILES.put(`labels/${setid}/${parsed.version}/${contentHash}.${version?'zip':'xml'}`,bytes,{httpMetadata:{contentType:version?'application/zip':'application/xml'},customMetadata:{source:url.toString(),fetchedAt:now(),sha256:contentHash}});
+    await putArchive(`labels/${setid}/${parsed.version}/${contentHash}.${version?'zip':'xml'}`,bytes,{httpMetadata:{contentType:version?'application/zip':'application/xml'},customMetadata:{source:url.toString(),fetchedAt:now(),sha256:contentHash}});
     for(const v of parsed.versions){v.contentHash=contentHash;v.observedAt=now();await saveVersion(v);}
     if(!version)for(const p of parsed.products)await saveProduct(p);
     return parsed;
@@ -80,7 +81,7 @@ async function liveCaProduct(code:number):Promise<Product>{
   const product:Product={id:`CA:${code}`,name:p.brand_name,genericName:ingredients.map(i=>i.name).join(' / '),market:'CA',manufacturer:p.company_name||'Unknown',strength:ingredients.map(i=>i.strength).join(' / '),form:arr<any>(form.value).map(x=>x.pharmaceutical_form_name||x.dosage_form_name).filter(Boolean).join(', '),route:arr<any>(route.value).map(x=>x.route_of_administration_name).filter(Boolean).join(', '),identifiers:{drugCode:code,din:String(p.drug_identification_number)},ingredients,sourceUrl:`https://health-products.canada.ca/dpd-bdpp/info?lang=eng&code=${code}`,status:arr<any>(status.value).map(x=>x.status).filter(Boolean).join(', ')};
   await saveProduct(product);const contentHash=await hash(JSON.stringify(product));
   const previous=await db().prepare('SELECT hash FROM versions WHERE productId=? ORDER BY observed DESC LIMIT 1').bind(product.id).first<{hash:string}>();
-  if(previous?.hash!==contentHash){const stamp=now();const v:ProductVersion={id:`${product.id}@${stamp}`,productId:product.id,version:stamp,observedAt:stamp,sourceUpdatedAt:sourceDate(p.last_update_date),active:ingredients,form:product.form,route:product.route,sourceUrl:product.sourceUrl,contentHash,completeness:'partial',notes:['Observed product snapshot. Source update dates are not formulation effective dates. Historical inactive ingredients and label sections are unavailable from this API.']};await saveVersion(v);await env.FILES.put(`canada/products/${code}/${contentHash}.json`,JSON.stringify({product,raw:raw.value,active:active.value,form:form.value,route:route.value,status:status.value}),{httpMetadata:{contentType:'application/json'},customMetadata:{fetchedAt:stamp}});}
+  if(previous?.hash!==contentHash){const stamp=now();const v:ProductVersion={id:`${product.id}@${stamp}`,productId:product.id,version:stamp,observedAt:stamp,sourceUpdatedAt:sourceDate(p.last_update_date),active:ingredients,form:product.form,route:product.route,sourceUrl:product.sourceUrl,contentHash,completeness:'partial',notes:['Observed product snapshot. Source update dates are not formulation effective dates. Historical inactive ingredients and label sections are unavailable from this API.']};await saveVersion(v);await putArchive(`canada/products/${code}/${contentHash}.json`,JSON.stringify({product,raw:raw.value,active:active.value,form:form.value,route:route.value,status:status.value}),{httpMetadata:{contentType:'application/json'},customMetadata:{fetchedAt:stamp}});}
   return product;
 }
 async function liveSearchCA(query:string,page:number):Promise<Result<Product[]>>{

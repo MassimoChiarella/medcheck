@@ -80,3 +80,13 @@ GitHub scheduled runs use the default branch, can be delayed, and public-reposit
 DailyMed, RxNorm, openFDA and Health Canada remain the upstream authorities. WHO/VigiAccess and EMA are external research links, not downloadable mirrors supplied by this repository. Read the source directory and [README](README.md) for coverage, attribution and Canadian interpretation caveats.
 
 The importers preserve source bytes and hashes and validate complete expected record counts before publishing a dataset within your installation. They do not promise to reproduce the author's exact historical DPD observations. US information is an on-demand cache, not a complete offline mirror of every US medication and report.
+
+## Storage maintenance
+
+`npm run data:maintenance` audits your local database and archive bucket without deleting data. `npm run data:maintenance -- --apply` reclaims eligible staging work. Each normal update runs this bounded maintenance first. Advanced hosted owners can run `python scripts/maintain_storage.py --apply` with their own destination and import credentials.
+
+An abandoned, unpublished import must be inactive for seven days before cleanup. Cleanup retains the active and previous complete report generations, published product history, all label archives, and completed raw source archives. It only removes older unused report indexes, retired catalogue staging rows, and old unreferenced partial uploads. Interrupted cleanup resumes on the next run. Source checks and maintenance exclude each other.
+
+D1 admission measures physical database size and reserves replacement headroom before accepting a complete dataset. `IMPORT_DATABASE_LIMIT_BYTES` and `IMPORT_ARCHIVE_LIMIT_BYTES` default to 8,000,000,000 bytes each; lower these ceilings to your installation's actual provisioned allowances. These are application ceilings, not a promise of free capacity on other hosts. Ordinary Cloudflare Free D1 does not fit the complete Canadian index. No automatic paid upgrade occurs.
+
+Existing installations need one successful archive audit before adding new source files. Archive growth is reserved before writing. Failed writes can conservatively overcount capacity; audits preserve these reservations rather than risk overlooking an in-flight write. D1 physical size can also include reusable pages after deletion. A capacity stop retains the last complete dataset and requires owner review; the app never deletes published history or silently truncates coverage to make room.

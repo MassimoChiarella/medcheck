@@ -32,10 +32,10 @@ Acceptance: an unchanged validated release needs no index rebuild or republishin
 Acceptance: successful work survives retries, failed labels remain pending, and an incomplete cycle cannot be reported as a successful complete refresh.
 
 ## 4. Storage admission and conservative cleanup
-- [ ] 4.1 Measure D1 capacity and reserve replacement headroom before admitting an import.
-- [ ] 4.2 Define a grace period and bounded cleanup for abandoned staging records and orphaned raw upload chunks.
-- [ ] 4.3 Protect active work, current and previous complete CV generations, published product history and completed source archives.
-- [ ] 4.4 Add a dry run and test cleanup/recovery races, partial cleanup, rollback protection and low capacity.
+- [x] 4.1 Measure D1 capacity and reserve replacement headroom before admitting an import.
+- [x] 4.2 Define a grace period and bounded cleanup for abandoned staging records and orphaned raw upload chunks.
+- [x] 4.3 Protect active work, current and previous complete CV generations, published product history and completed source archives.
+- [x] 4.4 Add a dry run and test cleanup/recovery races, partial cleanup, rollback protection and low capacity.
 
 Acceptance: cleanup cannot delete published evidence or active work. Referenced archives remain retained; if that retained history fills storage, updates stop explicitly rather than erase history or upgrade hosting.
 
@@ -59,3 +59,5 @@ Acceptance: failures are visible and recoverable, real source checks pass, the p
 - Phase 2: conditional downloads, seven-day full byte rechecks, active-release checkpoints and a public-files-only Actions cache passed unit and HTTP integration checks. Canada Vigilance supplies Last-Modified; DPD currently supplies no validators and still needs bounded file downloads to confirm changes.
 
 - Phase 3: unique SPL refresh cycles, per-document checkpoints, request pacing, Retry-After handling and bounded retries passed parser/client and isolated HTTP checks. Throttled records remain pending without consuming failure attempts; a new check resumes unfinished cycles.
+
+- Phase 4: measured admission/reservations, seven-day staging retention, bounded maintenance and archive ceilings passed 18 Node tests, 14 Python tests and the isolated Worker integration suite. Competing reservations, stale leases, dry runs, interrupted cleanup, restaging, retained history and rollback protection were verified.

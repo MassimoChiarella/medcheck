@@ -39,6 +39,9 @@ jobs:
             work/dpd/*.json
           key: medcheck-public-sources-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: medcheck-public-sources-v1-${{ runner.os }}-
+      - name: Audit storage and reclaim abandoned staging work
+        id: maintenance
+        run: python scripts/maintain_storage.py --apply
       - name: Refresh the complete Canadian human product catalogue
         id: catalogue
         continue-on-error: true

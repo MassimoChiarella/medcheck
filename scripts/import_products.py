@@ -62,7 +62,7 @@ def import_products(args,base=None,token=None,check=None):
     # Run identity includes observation time so A→B→A remains a new occurrence.
     generation=hashlib.sha256((digest+observed).encode()).hexdigest()[:16]
     if check:check.phase('importing')
-    run=post(base,token,{'action':'dpd-begin','id':generation,'count':len(entries),'observedAt':observed,'hash':digest})
+    run=post(base,token,{'action':'dpd-begin','id':generation,'count':len(entries),'observedAt':observed,'hash':digest,'bytes':len(json.dumps(entries,ensure_ascii=False).encode())})
     if run['state']=='active':
         print('Canadian catalogue unchanged; prior complete snapshot retained.')
         if check:

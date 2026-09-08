@@ -10,6 +10,9 @@ export type UpdateRun = {
 const checkSources = new Set(['cv', 'dpd', 'dailymed', 'maintenance']);
 const phases = new Set(['checking', 'downloading', 'validating', 'archiving', 'importing', 'refreshing', 'cleanup', 'complete']);
 export class UpdateConflict extends Error { status = 409; }
+export async function noMaintenance() {
+  if (await db().prepare("SELECT 1 FROM update_runs WHERE source='maintenance' AND outcome='running' AND heartbeat>?").bind(new Date(Date.now() - CHECK_LEASE_MS).toISOString()).first()) throw new UpdateConflict('Storage maintenance is running. Retry after it finishes.');
+}
 export function checkStatus(run: UpdateRun, stamp = Date.now()) {
   const interrupted = run.outcome === 'running' && stamp - Date.parse(run.heartbeat) > CHECK_LEASE_MS;
   return {
@@ -56,18 +59,21 @@ export async function checkAction(b: Record<string, unknown>): Promise<Response 
   const stamp = now(), phase = b.phase === undefined ? 'checking' : b.phase;
   if (typeof phase !== 'string' || !phases.has(phase)) throw new Error('Invalid update phase.');
   if (b.action === 'check-begin') {
+    const cutoff = new Date(Date.now() - CHECK_LEASE_MS).toISOString();
     const claimed = await db().prepare(`INSERT INTO update_runs(source,runId,started,heartbeat,outcome,phase)
-      VALUES(?,?,?,?,'running',?) ON CONFLICT(source) DO UPDATE SET
+      SELECT ?,?,?,?,'running',? WHERE NOT EXISTS(SELECT 1 FROM update_runs WHERE outcome='running' AND heartbeat>? AND
+        ((?='maintenance' AND source<>'maintenance') OR (?<>'maintenance' AND source='maintenance')))
+      ON CONFLICT(source) DO UPDATE SET
       runId=excluded.runId,started=CASE WHEN update_runs.runId=excluded.runId THEN update_runs.started ELSE excluded.started END,
       heartbeat=excluded.heartbeat,finished=NULL,outcome='running',phase=excluded.phase,error=NULL
       WHERE update_runs.outcome<>'running' OR update_runs.heartbeat<? OR update_runs.runId=excluded.runId
-      RETURNING source`).bind(b.source, b.runId, stamp, stamp, phase, new Date(Date.now() - CHECK_LEASE_MS).toISOString()).first();
+      RETURNING source`).bind(b.source, b.runId, stamp, stamp, phase, cutoff, b.source, b.source, cutoff).first();
     if (!claimed) throw new UpdateConflict('Another check for this source is still running.');
     return Response.json({ started: true, leaseSeconds: CHECK_LEASE_MS / 1000 });
   }
   if (b.action === 'check-heartbeat') {
-    const active = await db().prepare("UPDATE update_runs SET heartbeat=?,phase=? WHERE source=? AND runId=? AND outcome='running' RETURNING source")
-      .bind(stamp, phase, b.source, b.runId).first();
+    const active = await db().prepare("UPDATE update_runs SET heartbeat=?,phase=? WHERE source=? AND runId=? AND outcome='running' AND heartbeat>? RETURNING source")
+      .bind(stamp, phase, b.source, b.runId, new Date(Date.now()-CHECK_LEASE_MS).toISOString()).first();
     if (!active) throw new UpdateConflict('This source check no longer owns the update lease.');
     return Response.json({ active: true });
   }
@@ -75,9 +81,13 @@ export async function checkAction(b: Record<string, unknown>): Promise<Response 
   const success = b.outcome !== 'failed';
   const reason = success ? null : `The ${phase} phase failed. Previous successful data remains available. See the owner update log.`;
   const completed = await db().prepare(`UPDATE update_runs SET heartbeat=?,finished=?,outcome=?,phase=?,error=?,
-    lastSuccess=CASE WHEN ? THEN ? ELSE lastSuccess END WHERE source=? AND runId=? AND outcome='running' RETURNING source`)
-    .bind(stamp, stamp, b.outcome, phase, reason, success ? 1 : 0, stamp, b.source, b.runId).first();
-  if (!completed) throw new UpdateConflict('This source check no longer owns the update lease.');
+    lastSuccess=CASE WHEN ? THEN ? ELSE lastSuccess END WHERE source=? AND runId=? AND outcome='running' AND heartbeat>? RETURNING source`)
+    .bind(stamp, stamp, b.outcome, phase, reason, success ? 1 : 0, stamp, b.source, b.runId, new Date(Date.now()-CHECK_LEASE_MS).toISOString()).first();
+  if (!completed) {
+    const previous = await db().prepare('SELECT outcome,finished FROM update_runs WHERE source=? AND runId=?').bind(b.source,b.runId).first<{outcome:string;finished:string}>();
+    if (previous?.finished && previous.outcome === b.outcome) return Response.json({ completed: true, outcome: b.outcome, replayed: true });
+    throw new UpdateConflict('This source check no longer owns the update lease.');
+  }
   if (success) await db().prepare('UPDATE source_state SET lastChecked=?,error=NULL WHERE id=?').bind(stamp, b.source).run();
   return Response.json({ completed: true, outcome: b.outcome });
 }
