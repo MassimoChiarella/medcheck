@@ -1,0 +1,32 @@
+name: Refresh medication sources
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: medication-source-import
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      MEDCHECK_URL: ${{ secrets.MEDCHECK_URL }}
+      MEDCHECK_IMPORT_TOKEN: ${{ secrets.MEDCHECK_IMPORT_TOKEN }}
+      SITES_AUTHORIZATION: ${{ secrets.SITES_AUTHORIZATION }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify configuration
+        run: |
+          test -n "$MEDCHECK_URL" && test -n "$MEDCHECK_IMPORT_TOKEN" || { echo 'Configure the deployment URL and import secret before enabling this schedule.'; exit 1; }
+      - name: Test source parsing and date handling
+        run: python -m unittest discover -s tests -p 'test_*.py'
+      - name: Refresh the complete Canadian human product catalogue
+        run: python scripts/import_products.py --upload
+      - name: Import complete published Canadian data and refresh tracked products
+        run: python scripts/import_canada.py --upload --refresh
