@@ -63,8 +63,16 @@ jobs:
             work/canada/extract_extrait.metadata.json
             work/dpd/*.json
           key: ${{ steps.source-cache.outputs.cache-primary-key }}
+      - name: Summarize every source outcome
+        if: always()
+        env:
+          STEP_MAINTENANCE: ${{ steps.maintenance.outcome }}
+          STEP_DPD: ${{ steps.catalogue.outcome }}
+          STEP_CV: ${{ steps.reports.outcome }}
+          STEP_DAILYMED: ${{ steps.labels.outcome }}
+        run: python scripts/update_summary.py
       - name: Report incomplete updates
-        if: always() && (steps.catalogue.outcome == 'failure' || steps.reports.outcome == 'failure' || steps.labels.outcome == 'failure')
+        if: always() && (steps.maintenance.outcome == 'failure' || steps.catalogue.outcome == 'failure' || steps.reports.outcome == 'failure' || steps.labels.outcome == 'failure')
         run: |
           echo 'At least one source update failed. Check the step logs; previously imported data is retained.'
           exit 1

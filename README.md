@@ -61,3 +61,5 @@ All source fixtures are real public source documents; synthetic records exist on
 ## Deployment ownership
 
 `.openai/hosting.json` contains the original project identifier and logical storage bindings; it contains no credentials. Forks should replace the original project identifier with their own registered Sites project before deployment. Keep import tokens, source archives, indexed databases, and generated build output out of Git.
+
+Production update work is tracked in [UPDATE_PLAN.md](UPDATE_PLAN.md). Independent installations can audit storage with `npm run data:maintenance`, resume checks with `npm run data:update`, and inspect source-specific freshness in the app. See [SETUP.md](SETUP.md) for retention, capacity, failure recovery and the opt-in hosted schedule.

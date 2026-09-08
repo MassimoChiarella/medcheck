@@ -40,9 +40,9 @@ Acceptance: successful work survives retries, failed labels remain pending, and 
 Acceptance: cleanup cannot delete published evidence or active work. Referenced archives remain retained; if that retained history fills storage, updates stop explicitly rather than erase history or upgrade hosting.
 
 ## 5. Unattended workflow and release verification
-- [ ] 5.1 Produce a redacted, source-specific Actions summary and preserve failed-step outcomes.
-- [ ] 5.2 Document owner failure notifications, recovery commands, cache behavior, retention and capacity limits.
-- [ ] 5.3 Run parser, scheduler, API integration and failure-injection checks plus the production build.
+- [x] 5.1 Produce a redacted, source-specific Actions summary and preserve failed-step outcomes.
+- [x] 5.2 Document owner failure notifications, recovery commands, cache behavior, retention and capacity limits.
+- [x] 5.3 Run parser, scheduler, API integration and failure-injection checks plus the production build.
 - [ ] 5.4 Deploy privately and verify real source checks, unchanged updates and complete existing coverage.
 - [ ] 5.5 Run the hosted workflow manually with this installation's credentials; record any access blocker precisely.
 - [ ] 5.6 Keep the daily launch gate off until public launch; verify the enable/disable procedure.
