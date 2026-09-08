@@ -45,10 +45,10 @@ export function result<T>(data:T,notes:string[]=[],complete:Result<T>['completen
 export const labelLink=(id:string)=>`https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${id}`;
 export async function saveProduct(p:Product){await db().prepare('INSERT INTO products(id,data,observed) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed').bind(p.id,JSON.stringify(p),now()).run();}
 export async function saveVersion(v:ProductVersion){await db().prepare('INSERT INTO versions(id,productId,version,data,hash,observed) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,hash=excluded.hash').bind(v.id,v.productId,v.version,JSON.stringify(v),v.contentHash||null,v.observedAt||now()).run();}
-export async function loadLabel(setid:string,version?:string){
+export async function loadLabel(setid:string,version?:string,force=false){
   if(!/^[a-f0-9-]{36}$/i.test(setid)||version&&!/^\d{1,9}$/.test(version))throw new Error('Invalid label identifier.');
   const key=`spl:${setid}:${version||'current'}`;
-  return cached(key,version?365*86400000:86400000,'dailymed',async()=>{
+  return cached(key,force?0:version?365*86400000:86400000,'dailymed',async()=>{
     const url=version?new URL(`https://dailymed.nlm.nih.gov/dailymed/getFile.cfm?type=zip&setid=${setid}&version=${version}`):new URL(`https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/${setid}.xml`);
     const bytes=await fetchBytes(url);const xml=version?unzipLabel(bytes):new TextDecoder().decode(bytes);const parsed=parseSPL(xml,setid);const contentHash=await hash(bytes);
     if(version&&parsed.version!==version)throw new Error('The archive version did not match the request.');
@@ -71,6 +71,7 @@ export async function searchUS(query:string,page:number):Promise<Result<Product[
 async function caEndpoint(name:string,params:Record<string,string|number>){return jsonSource('dpd',`https://health-products.canada.ca/api/drug/${name}/`,{...params,lang:'en',type:'json'});}
 async function liveCaProduct(code:number):Promise<Product>{
   const [raw,active,form,route,status]=await Promise.all([caEndpoint('drugproduct',{id:code}),caEndpoint('activeingredient',{id:code}),caEndpoint('form',{id:code}),caEndpoint('route',{id:code}),caEndpoint('status',{id:code})]);
+  if([raw,active,form,route,status].some(s=>s.stale))throw new Error('One or more Canadian product sections could not be refreshed.');
   const p=arr<any>(raw.value)[0];if(!p||p.class_name!=='Human')throw new Error('A matching human medication was not available.');
   const ingredients=arr<any>(active.value).map(a=>({name:String(a.ingredient_name||''),strength:[a.strength,a.strength_unit].filter(Boolean).join(' ')+(a.dosage_value&&a.dosage_unit?' / '+a.dosage_value+' '+a.dosage_unit:'')}));
   const product:Product={id:`CA:${code}`,name:p.brand_name,genericName:ingredients.map(i=>i.name).join(' / '),market:'CA',manufacturer:p.company_name||'Unknown',strength:ingredients.map(i=>i.strength).join(' / '),form:arr<any>(form.value).map(x=>x.pharmaceutical_form_name||x.dosage_form_name).filter(Boolean).join(', '),route:arr<any>(route.value).map(x=>x.route_of_administration_name).filter(Boolean).join(', '),identifiers:{drugCode:code,din:String(p.drug_identification_number)},ingredients,sourceUrl:`https://health-products.canada.ca/dpd-bdpp/info?lang=eng&code=${code}`,status:arr<any>(status.value).map(x=>x.status).filter(Boolean).join(', ')};

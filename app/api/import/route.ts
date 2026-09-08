@@ -65,11 +65,11 @@ export async function POST(request:Request){
       const count=await db().prepare('SELECT COUNT(*) AS n FROM dpd_staging WHERE gen=?').bind(b.id).first<{n:number}>();if(count?.n!==JSON.parse(run.manifest).count)throw new Error('Catalogue is incomplete. Previous snapshot retained.');
       await db().batch([
         db().prepare("INSERT INTO versions(id,productId,version,data,hash,observed) SELECT json_extract(s.versionData,'$.id'),s.id,?,s.versionData,s.hash,? FROM dpd_staging s WHERE s.gen=? AND s.hash IS NOT (SELECT hash FROM versions v WHERE v.productId=s.id ORDER BY observed DESC LIMIT 1) ON CONFLICT(id) DO NOTHING").bind(run.created,run.created,b.id),
-        db().prepare("INSERT INTO products(id,data,observed) SELECT id,data,? FROM dpd_staging WHERE gen=? ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed").bind(run.created,b.id),
-        db().prepare("UPDATE imports SET state='retired' WHERE source='dpd' AND state='active'"),
-        db().prepare("UPDATE imports SET state='active',completed=? WHERE id=?").bind(now(),b.id),
-        db().prepare("INSERT INTO source_state(id,generation,lastSuccess,lastChecked,error,coverage) VALUES('dpd',?,?,?,NULL,?) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,lastSuccess=excluded.lastSuccess,lastChecked=excluded.lastChecked,error=NULL,coverage=excluded.coverage").bind(b.id,run.created,now(),run.cutoff),
-      ]);return Response.json({state:'active',count:count!.n});
+        db().prepare("INSERT INTO products(id,data,observed) SELECT id,data,? FROM dpd_staging WHERE gen=? ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed WHERE julianday(excluded.observed)>=julianday(products.observed)").bind(run.created,b.id),
+        db().prepare("UPDATE imports SET state='retired' WHERE source='dpd' AND state='active' AND julianday(created)<=julianday(?)").bind(run.created),
+        db().prepare("UPDATE imports SET state=CASE WHEN EXISTS(SELECT 1 FROM imports WHERE source='dpd' AND state='active' AND julianday(created)>julianday(?)) THEN 'retired' ELSE 'active' END,completed=? WHERE id=?").bind(run.created,now(),b.id),
+        db().prepare("INSERT INTO source_state(id,generation,lastSuccess,lastChecked,error,coverage) VALUES('dpd',?,?,?,NULL,?) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,lastSuccess=excluded.lastSuccess,lastChecked=excluded.lastChecked,error=NULL,coverage=excluded.coverage WHERE julianday(excluded.lastSuccess)>=julianday(source_state.lastSuccess)").bind(b.id,run.created,now(),run.cutoff),
+      ]);return Response.json({state:(await db().prepare('SELECT state FROM imports WHERE id=?').bind(b.id).first<{state:string}>())?.state,count:count!.n});
     }
     if(action==='dpd-cleanup'){
       const r=await db().prepare("DELETE FROM dpd_staging WHERE rowid IN(SELECT rowid FROM dpd_staging WHERE gen IN(SELECT id FROM imports WHERE source='dpd' AND state='retired') LIMIT 5000)").run();return Response.json({deleted:r.meta.changes});
@@ -81,12 +81,12 @@ export async function POST(request:Request){
     if(action==='refresh'){
       const cursor=typeof b.cursor==='string'?b.cursor:'';
       const rows=await db().prepare("SELECT id FROM products WHERE id>? AND id LIKE 'US:%' ORDER BY id LIMIT 5").bind(cursor).all<{id:string}>();let refreshed=0;const failures:string[]=[];
-      for(const row of rows.results)try{await db().prepare('DELETE FROM cache WHERE key=?').bind('spl:'+row.id.split(':')[1]+':current').run();await loadLabel(row.id.split(':')[1]);refreshed++;}catch{failures.push(row.id);}
+      for(const row of rows.results)try{const label=await loadLabel(row.id.split(':')[1],undefined,true);if(label.stale)throw new Error('Latest source request failed; previous label retained.');refreshed++;}catch{failures.push(row.id);}
       return Response.json({refreshed,failures,cursor:rows.results.at(-1)?.id||null,hasMore:rows.results.length===5});
     }
     const id=String(b.id||'');if(!/^[a-f0-9]{16}$/.test(id))throw new Error('Invalid import generation.');
     if(action==='status'){
-      const run=await db().prepare('SELECT * FROM imports WHERE id=?').bind(id).first();const batches=await db().prepare('SELECT tableName,MAX(batchId) AS lastBatch,SUM(rows) AS rows FROM import_batches WHERE importId=? GROUP BY tableName').bind(id).all();return Response.json({run,batches:batches.results});
+      const run=await db().prepare('SELECT * FROM imports WHERE id=?').bind(id).first();const batches=await db().prepare('SELECT tableName,MAX(batchId) AS lastBatch,SUM(rows) AS rows FROM import_batches WHERE importId=? GROUP BY tableName').bind(id).all();return Response.json({run,batches:batches.results,databaseBytes:batches.meta.size_after});
     }
     if(action==='begin'){
       if(!/^\d{4}-\d{2}-\d{2}$/.test(b.cutoff)||!/^[a-f0-9]{64}$/.test(b.hash))throw new Error('Invalid source manifest.');
@@ -102,7 +102,7 @@ export async function POST(request:Request){
     }
     if(action==='batch'){
       if(run.state!=='staging')throw new Error('Generation is immutable after validation.');
-      const fields=tables[b.table];if(!fields||!Number.isSafeInteger(b.batch)||b.batch<0||!Array.isArray(b.rows)||!b.rows.length||b.rows.length>4000)throw new Error('Invalid bounded batch.');
+      const fields=tables[b.table];if(!fields||!Number.isSafeInteger(b.batch)||b.batch<0||!Array.isArray(b.rows)||!b.rows.length||b.rows.length>12000)throw new Error('Invalid bounded batch.');
       if(b.rows.some((r:unknown)=>!Array.isArray(r)||r.length!==fields.length||(r as unknown[]).some(x=>x!==null&&typeof x!=='string'&&typeof x!=='number')))throw new Error('Batch does not match the source schema.');
       if(b.rows.some((r:(string|number|null)[])=>!Number.isSafeInteger(r[0])||Number(r[0])<0||r.some(x=>typeof x==='string'&&x.length>100_000)))throw new Error('Invalid source row identifiers or field lengths.');
       const serialized=JSON.stringify(b.rows),digest=await hash(serialized);const existing=await db().prepare('SELECT hash FROM import_batches WHERE importId=? AND tableName=? AND batchId=?').bind(id,b.table,b.batch).first<{hash:string}>();if(existing){if(existing.hash!==digest)throw new Error('Batch content conflict.');return Response.json({accepted:true,replayed:true});}

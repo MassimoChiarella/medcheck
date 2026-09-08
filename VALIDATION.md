@@ -2,7 +2,7 @@
 
 Validated on September 7–8, 2026, using real public source records and an isolated local database for synthetic transaction tests.
 
-- TypeScript checks, production build, application lint and 12 parser/matching tests pass. Generated UI primitives are excluded from application lint; endpoint mappings explicitly handle heterogeneous government JSON records.
+- TypeScript checks, production build, application lint and 13 parser/matching tests pass. Generated UI primitives are excluded from application lint; endpoint mappings explicitly handle heterogeneous government JSON records.
 - Complete CV extract validated against its required source schema, row counts, date range, relationships and SQLite integrity. Full local D1 import promoted all 13,596,638 indexed rows across five tables, using approximately 2.0 GiB including product records, history and indexes. No Canadian reports were sampled.
 - Complete DPD human catalogue: 50,915 products. DIN `02238280` resolves APO-SERTRALINE 25 MG; leading zeros preserved. A cancelled product exists as DIN `00000019`, PLACIDYL CAP 200MG.
 - Live US searches verified sertraline, atorvastatin and amoxicillin/clavulanate combination products. Exact product NDCs remain distinct within SPL documents.
@@ -10,7 +10,7 @@ Validated on September 7–8, 2026, using real public source records and an isol
 - US sertraline/atorvastatin report query returned real source-matched candidates with two distinct medication records. Sertraline 50 mg versus 100 mg returned ambiguous/unavailable with no zero-count assertion.
 - Full Canadian report query for four explicitly chosen APO-SERTRALINE CV dictionary entries returned 162 matching reports, with paginated records and reaction counts. Single-entry date/reaction/seriousness filters also exercised.
 - Impossible dates are rejected. Real SPL tests cover strength isolation, active-moiety quantity basis, one-unit numerator, reordered ingredients, missing fields, changed UNII codes, legacy warning text, rejected external XML declarations, missing archives, combination aliases and latest case versions.
-- Isolated HTTP integration tests cover unauthorized requests, storage admission, incomplete promotion, exact batch replay, out-of-order batches, failed transfer retaining prior data, complete promotion, explicit rollback, protection from automatic re-promotion, cleanup/restoration exclusion, unchanged product snapshots and A→B→A history events.
+- Isolated HTTP integration tests cover unauthorized requests, storage admission, incomplete promotion, exact batch replay, out-of-order batches, failed transfer retaining prior data, complete promotion, explicit rollback, protection from automatic re-promotion, cleanup/restoration exclusion, unchanged product snapshots, A→B→A history events, competing observation timestamps and resumed parallel uploads with byte-bounded batches.
 - Mobile layout checked at 390 CSS pixels with no horizontal page overflow. Search, explicit dictionary selection by keyboard, saved research and source links verified in the browser. Print styling removes navigation and controls and expands visible evidence passages; collapsed sections remain omitted intentionally.
 - Starter runtime vulnerabilities patched: React/RSC 19.2.8, Vinext beta.9, Vite 8.2.2 and matching Cloudflare tooling. npm audit now reports zero high/critical findings and four moderate findings in the Drizzle migration CLI dependency chain. No forced downgrade was applied.
 

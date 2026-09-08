@@ -54,4 +54,24 @@ for n,strength in enumerate(['1 mg','2 mg','1 mg']):
     assert send(action='dpd-begin',**m)['state']=='active'
 h=get(action='history',id='CA:123')['data']
 assert len(h)==3 and [v['active'][0]['strength'] for v in h]==['1 mg','2 mg','1 mg'],h
+# An older competing catalogue must not replace a newer live/catalogue observation.
+old_id='4444444444444444'
+send(action='dpd-begin',id=old_id,hash=old_id*4,count=1,observedAt='2026-09-07T00:00:00Z')
+send(action='dpd',id=old_id,entries=[{'product':{**p,'strength':'OLDER','ingredients':[{'name':'A','strength':'OLDER'}]}}])
+assert send(action='dpd-complete',id=old_id)['state']=='retired'
+assert get(action='history',id='CA:123')['data'][0]['active'][0]['strength']=='1 mg'
+# Resume a partial batch prefix with variable-sized batches across independent tables.
+import sqlite3,tempfile
+from import_canada import upload,TABLES
+with tempfile.TemporaryDirectory() as directory:
+    path=Path(directory)/'resume.sqlite';connection=sqlite3.connect(path)
+    for table,(schema,_) in TABLES.items():
+        connection.execute(f'CREATE TABLE {table}({schema})')
+        data=[tuple([i]+rows[table][0][1:]) for i in range(1,4)]
+        connection.executemany(f'INSERT INTO {table} VALUES('+','.join('?'*len(data[0]))+')',data)
+    connection.commit();connection.close()
+    gen='5555555555555555';m={**manifest(gen),'manifest':{t:3 for t in TABLES},'batch_size':2}
+    send(action='begin',**m);send(action='batch',id=gen,table='cv_products',batch=0,rows=rows['cv_products'])
+    upload(path,m,base,token)
+    assert send(action='status',id=gen)['run']['state']=='active'
 print('PASS: authentication boundary, bounds, idempotency, interrupted import, promotion, retained data, rollback, unchanged snapshots, leading-zero DIN and A→B→A history.')
