@@ -37,7 +37,8 @@ class DestinationChecks(unittest.TestCase):
             for server in [origin,receiver]:server.shutdown();server.server_close()
             for t in threads:t.join()
     def test_partial_refresh_is_not_success(self):
-        with patch.object(mod,'post',side_effect=[{'failures':['US:example'],'hasMore':True,'cursor':'a'},{'failures':[],'hasMore':False}]):
-            with self.assertRaisesRegex(RuntimeError,'1 indexed products'):mod.refresh('https://example.com','x'*32)
+        from unittest.mock import Mock
+        check=Mock();check.send.side_effect=[{}, {'completed':2,'remaining':1,'complete':False,'blocked':True,'changed':0}]
+        with self.assertRaisesRegex(RuntimeError,'1 label documents'):mod.refresh('https://example.com','x'*32,check)
 
 if __name__=='__main__':unittest.main()

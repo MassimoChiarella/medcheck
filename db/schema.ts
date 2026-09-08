@@ -21,3 +21,7 @@ export const updateRuns = sqliteTable('update_runs', {
   finished: text(), lastSuccess: text(), outcome: text().notNull(), phase: text().notNull(),
   error: text(), cursor: text().notNull().default(''), details: text().notNull().default('{}'),
 });
+export const labelRefresh = sqliteTable('label_refresh', {
+  setId: text().primaryKey(), cycle: text().notNull(), state: text().notNull(), attempts: integer().notNull().default(0),
+  nextAttempt: integer().notNull().default(0), changed: integer().notNull().default(0), error: text(),
+}, t=>[index('label_refresh_pending').on(t.cycle,t.state,t.nextAttempt)]);

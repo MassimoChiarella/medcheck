@@ -214,13 +214,26 @@ def cleanup(base,token):
             while post(base,token,{'action':'cleanup','id':run['id'],'table':table})['deleted']:pass
 
 
-def refresh(base,token):
-    cursor='';failures=[]
-    while True:
-        r=post(base,token,{'action':'refresh','cursor':cursor});print('Product refresh:',json.dumps(r),flush=True);failures.extend(r.get('failures',[]))
-        if not r.get('hasMore'):break
-        cursor=r['cursor']
-    if failures:raise RuntimeError(f'{len(failures)} indexed products could not be refreshed; previous records were retained.')
+def refresh(base,token,check=None):
+    if check is None:
+        with SourceCheck('dailymed',base,token,post) as owned:
+            owned.phase('refreshing');return refresh(base,token,owned)
+    limit=int(os.getenv('MEDCHECK_REFRESH_SECONDS','7200'))
+    if not 10<=limit<=10800:raise ValueError('MEDCHECK_REFRESH_SECONDS must be between 10 and 10800.')
+    deadline=time.monotonic()+limit
+    started=check.send('refresh-start');print('Label cycle:',json.dumps(started),flush=True)
+    last_print=-1
+    while time.monotonic()<deadline:
+        state=check.send('refresh')
+        if state['completed']//25!=last_print or state['complete'] or state['blocked']:
+            print('Label refresh:',json.dumps(state),flush=True);last_print=state['completed']//25
+        if state['complete']:
+            check.outcome='updated' if state['changed'] else 'unchanged'
+            return state
+        if state['blocked']:raise RuntimeError(f"{state['remaining']} label documents could not be refreshed; progress is saved for the next attempt.")
+        # Worker requests remain short; pacing and longer upstream retry waits happen here.
+        time.sleep(min(60,max(1,state.get('retryAfter',1)),max(0,deadline-time.monotonic())))
+    raise RuntimeError('Label refresh time budget reached; remaining work is saved for the next run.')
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--archive',type=pathlib.Path);parser.add_argument('--workdir',type=pathlib.Path,default=pathlib.Path('work/canada'));parser.add_argument('--upload',action='store_true');parser.add_argument('--refresh',action='store_true');parser.add_argument('--refresh-only',action='store_true');args=parser.parse_args();args.workdir.mkdir(parents=True,exist_ok=True)
@@ -254,5 +267,5 @@ def main():
             archive=args.archive or download(args.workdir/'extract_extrait.zip');build(archive,args.workdir/'canada.sqlite')
     if args.refresh or args.refresh_only:
         with SourceCheck('dailymed',base,token,post) as check:
-            check.phase('refreshing');refresh(base,token)
+            check.phase('refreshing');refresh(base,token,check)
 if __name__=='__main__':main()

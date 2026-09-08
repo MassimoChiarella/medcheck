@@ -24,10 +24,10 @@ Acceptance: an operator can distinguish never checked, running, unchanged, updat
 Acceptance: an unchanged validated release needs no index rebuild or republishing; missing or questionable cache never becomes a false unchanged result.
 
 ## 3. Paced, resumable label refreshes
-- [ ] 3.1 Refresh unique SPL set IDs once per cycle with a durable checkpoint.
-- [ ] 3.2 Pace source requests, honor retry delays and retry failed items without starving later labels.
-- [ ] 3.3 Resume interrupted cycles and bound work per request and per scheduled run.
-- [ ] 3.4 Test shared labels, throttling, transient/persistent failures, process interruption and independent source outcomes.
+- [x] 3.1 Refresh unique SPL set IDs once per cycle with a durable checkpoint.
+- [x] 3.2 Pace source requests, honor retry delays and retry failed items without starving later labels.
+- [x] 3.3 Resume interrupted cycles and bound work per request and per scheduled run.
+- [x] 3.4 Test shared labels, throttling, transient/persistent failures, process interruption and independent source outcomes.
 
 Acceptance: successful work survives retries, failed labels remain pending, and an incomplete cycle cannot be reported as a successful complete refresh.
 
@@ -57,3 +57,5 @@ Acceptance: failures are visible and recoverable, real source checks pass, the p
 - Phase 1: durable check lifecycle, source-directory status and isolated HTTP regressions passed. Existing import transaction tests also passed; interrupted checks retain previous data and success timestamps.
 
 - Phase 2: conditional downloads, seven-day full byte rechecks, active-release checkpoints and a public-files-only Actions cache passed unit and HTTP integration checks. Canada Vigilance supplies Last-Modified; DPD currently supplies no validators and still needs bounded file downloads to confirm changes.
+
+- Phase 3: unique SPL refresh cycles, per-document checkpoints, request pacing, Retry-After handling and bounded retries passed parser/client and isolated HTTP checks. Throttled records remain pending without consuming failure attempts; a new check resumes unfinished cycles.

@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
-import { db, hash, loadLabel, now } from '@/lib/server';
+import { db, hash, now } from '@/lib/server';
 import { checkAction, UpdateConflict } from '@/lib/updates';
+import { refreshAction } from '@/lib/refresh';
 
 // Fixed source tables only. The upload API never accepts SQL or arbitrary identifiers.
 const tables:Record<string,string[]>={
@@ -35,6 +36,7 @@ export async function POST(request:Request){
     }
     const b=await body(request);const action=b.action;
     const check=await checkAction(b);if(check)return check;
+    const refresh=await refreshAction(b);if(refresh)return refresh;
     if(action==='archive-status'||action==='archive-complete'){
       if(!/^[a-f0-9]{64}$/.test(b.hash))throw new Error('Invalid source hash.');const key=`raw-sources/${b.hash}/manifest.json`;
       if(action==='archive-status')return Response.json({complete:!!await env.FILES.head(key)});
@@ -79,12 +81,6 @@ export async function POST(request:Request){
     if(action==='retired'){
       // Keep the last successful generation for rollback, remove only older retired copies.
       const rows=await db().prepare("SELECT id FROM imports WHERE source='cv' AND (state='cleaning' OR (state='retired' AND id NOT IN(SELECT id FROM imports WHERE source='cv' AND state='retired' ORDER BY completed DESC LIMIT 1)))").all();return Response.json({generations:rows.results});
-    }
-    if(action==='refresh'){
-      const cursor=typeof b.cursor==='string'?b.cursor:'';
-      const rows=await db().prepare("SELECT id FROM products WHERE id>? AND id LIKE 'US:%' ORDER BY id LIMIT 5").bind(cursor).all<{id:string}>();let refreshed=0;const failures:string[]=[];
-      for(const row of rows.results)try{const label=await loadLabel(row.id.split(':')[1],undefined,true);if(label.stale)throw new Error('Latest source request failed; previous label retained.');refreshed++;}catch{failures.push(row.id);}
-      return Response.json({refreshed,failures,cursor:rows.results.at(-1)?.id||null,hasMore:rows.results.length===5});
     }
     const id=String(b.id||'');if(!/^[a-f0-9]{16}$/.test(id))throw new Error('Invalid import generation.');
     if(action==='status'){

@@ -46,3 +46,35 @@ if active:
     assert send(action='release-state',source='cv')['release']['documents']['extract_extrait.zip']==document
 send(action='check-finish',source='cv',runId=run,outcome='unchanged')
 print('PASS: release checkpoints require active source identity and current ownership.')
+
+# A shared SPL is queued once. Budget failures stay pending and completed work survives a new run.
+labels=['634ec8e3-6d83-4cb2-90a3-fc9c973b06bf','7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6']
+for setid,ndc in [(labels[0],'0000-0001'),(labels[1],'0000-0002'),(labels[1],'0000-0003')]:
+    sql(f"INSERT INTO products(id,data,observed) VALUES('US:{setid}:{ndc}','{{}}','2026-09-08T00:00:00Z')")
+label_run=uuid.uuid4().hex
+send(action='check-begin',source='dailymed',runId=label_run)
+cycle=send(action='refresh-start',source='dailymed',runId=label_run)
+assert cycle['total']==2
+assert send(action='refresh-start',source='dailymed',runId=label_run)['cycle']==cycle['cycle']
+import time
+if time.time()%60>55:time.sleep(5)
+sql("INSERT INTO source_budget(key,window,count) VALUES('dailymed.nlm.nih.gov:60000',CAST(unixepoch('now')/60 AS INTEGER),120) ON CONFLICT(key) DO UPDATE SET window=excluded.window,count=120")
+for _ in range(2):
+    pending=send(action='refresh',source='dailymed',runId=label_run)
+    assert pending['completed']==0 and not pending['complete']
+assert pending['retryAfter']>0 and not pending['blocked']
+assert all(row['attempts']==0 and row['nextAttempt']>0 for row in sql('SELECT attempts,nextAttempt FROM label_refresh'))
+sql(f"UPDATE label_refresh SET state='done',changed=1 WHERE setId='{labels[0]}'")
+send(action='check-finish',source='dailymed',runId=label_run,outcome='failed',phase='refreshing')
+next_run=uuid.uuid4().hex
+send(action='check-begin',source='dailymed',runId=next_run)
+resumed=send(action='refresh-start',source='dailymed',runId=next_run)
+assert resumed['resumed'] and resumed['cycle']==cycle['cycle'] and resumed['completed']==1
+rejects(action='refresh',source='dailymed',runId=label_run)
+sql("UPDATE label_refresh SET attempts=3,state='pending' WHERE state<>'done'")
+blocked=send(action='refresh',source='dailymed',runId=next_run)
+assert blocked['blocked'] and not blocked['complete'] and blocked['remaining']==1
+send(action='check-finish',source='dailymed',runId=next_run,outcome='failed',phase='refreshing')
+plan=sql("EXPLAIN QUERY PLAN SELECT DISTINCT substr(id,4,36) FROM products WHERE id GLOB 'US:*'")
+assert any('INDEX' in row['detail'] for row in plan),plan
+print('PASS: unique label cycles, indexed selection, rate waits, retained checkpoints and incomplete refresh results.')

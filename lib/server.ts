@@ -8,17 +8,17 @@ import { checkStatus, type UpdateRun } from './updates';
 export const db=()=>env.DB;
 export const now=()=>new Date().toISOString();
 export async function hash(value:string|Uint8Array){const bytes=typeof value==='string'?new TextEncoder().encode(value):value;return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes as BufferSource))].map(b=>b.toString(16).padStart(2,'0')).join('');}
-export async function cached<T>(key:string,ttl:number,source:string,load:()=>Promise<T>):Promise<{value:T;fetched:string;stale:boolean}>{
+export async function cached<T>(key:string,ttl:number,source:string,load:()=>Promise<T>,allowStale=true):Promise<{value:T;fetched:string;stale:boolean}>{
   const existing=await db().prepare('SELECT value,fetched FROM cache WHERE key=?').bind(key).first<{value:string;fetched:number}>();
   if(existing&&Date.now()-existing.fetched<ttl)return {value:JSON.parse(existing.value),fetched:new Date(existing.fetched).toISOString(),stale:false};
   try{const value=await load(),serialized=JSON.stringify(value),stamp=Date.now();if(serialized.length<1_500_000)await db().prepare('INSERT INTO cache(key,value,fetched,source) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,fetched=excluded.fetched').bind(key,serialized,stamp,source).run();return{value,fetched:new Date(stamp).toISOString(),stale:false};}
-  catch(error){if(existing)return{value:JSON.parse(existing.value),fetched:new Date(existing.fetched).toISOString(),stale:true};throw error;}
+  catch(error){if(existing&&allowStale)return{value:JSON.parse(existing.value),fetched:new Date(existing.fetched).toISOString(),stale:true};throw error;}
 }
 const allowed=new Set(['dailymed.nlm.nih.gov','rxnav.nlm.nih.gov','api.fda.gov','health-products.canada.ca']);
 async function claimBudget(host:string){
   // Shared counters bound source requests across Worker instances, including retries.
   const limits=host==='api.fda.gov'?[[60000,30],[86400000,env.OPENFDA_API_KEY?5000:900]]:[[60000,120]];
-  for(const [period,limit]of limits){const window=Math.floor(Date.now()/period);const row=await db().prepare('INSERT INTO source_budget(key,window,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,count=CASE WHEN source_budget.window=excluded.window THEN source_budget.count+1 ELSE 1 END WHERE source_budget.window<>excluded.window OR source_budget.count<? RETURNING count').bind(host+':'+period,window,limit).first();if(!row)throw new UpstreamError('This source request budget is reached. Try again after the current time window.',429);}
+  for(const [period,limit]of limits){const window=Math.floor(Date.now()/period);const row=await db().prepare('INSERT INTO source_budget(key,window,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,count=CASE WHEN source_budget.window=excluded.window THEN source_budget.count+1 ELSE 1 END WHERE source_budget.window<>excluded.window OR source_budget.count<? RETURNING count').bind(host+':'+period,window,limit).first();if(!row)throw new UpstreamError('This source request budget is reached. Try again after the current time window.',429,Math.max(1,Math.ceil(((window+1)*period-Date.now())/1000)));}
 }
 export async function fetchBytes(url:URL,limit=12*1024*1024):Promise<Uint8Array>{
   if(url.protocol!=='https:'||!allowed.has(url.hostname))throw new Error('Unsupported source.');
@@ -26,7 +26,9 @@ export async function fetchBytes(url:URL,limit=12*1024*1024):Promise<Uint8Array>
   for(let attempt=0;attempt<3;attempt++){
     await claimBudget(url.hostname);
     const response=await fetch(url,{headers:{Accept:'application/json,application/xml,application/zip'},signal:AbortSignal.timeout(25000),redirect:'manual'});
-    if((response.status===429||response.status>=500)&&attempt<2){await response.body?.cancel();await new Promise(r=>setTimeout(r,Math.min(4000,1000*(attempt+1))));continue;}
+    const retry=response.headers.get('Retry-After');const retryAfter=retry?Math.max(1,/^\d+$/.test(retry)?Number(retry):Math.ceil((Date.parse(retry)-Date.now())/1000)):undefined;
+    if(response.status===429||(response.status>=500&&retryAfter&&retryAfter>4)){await response.body?.cancel();throw new UpstreamError('The source requested a later retry.',response.status,Number.isFinite(retryAfter)?retryAfter:60);}
+    if(response.status>=500&&attempt<2){await response.body?.cancel();await new Promise(r=>setTimeout(r,Math.min(4000,1000*(attempt+1))));continue;}
     if(!response.ok){await response.body?.cancel();throw new UpstreamError(response.status===404?'No matching records were returned by this source.':`Source temporarily unavailable (HTTP ${response.status}).`,response.status);}
     if(Number(response.headers.get('content-length')||0)>limit){await response.body?.cancel();throw new Error('This source response is too large. Narrow your search.');}
     const reader=response.body?.getReader();if(!reader)throw new Error('The source returned an empty response.');
@@ -35,7 +37,7 @@ export async function fetchBytes(url:URL,limit=12*1024*1024):Promise<Uint8Array>
     const result=new Uint8Array(size);let pos=0;for(const chunk of chunks){result.set(chunk,pos);pos+=chunk.length;}return result;
   }throw new Error('The source is temporarily unavailable.');
 }
-export class UpstreamError extends Error{constructor(message:string,public status:number){super(message);}}
+export class UpstreamError extends Error{constructor(message:string,public status:number,public retryAfter?:number){super(message);}}
 // External JSON has heterogeneous source-owned fields; validate at each mapping boundary.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function jsonSource(source:string,base:string,params:Record<string,string|number>={},ttl=86400000):Promise<{value:any;fetched:string;stale:boolean}>{
@@ -57,7 +59,7 @@ export async function loadLabel(setid:string,version?:string,force=false){
     for(const v of parsed.versions){v.contentHash=contentHash;v.observedAt=now();await saveVersion(v);}
     if(!version)for(const p of parsed.products)await saveProduct(p);
     return parsed;
-  });
+  },!force);
 }
 export async function searchUS(query:string,page:number):Promise<Result<Product[]>>{
   const params:Record<string,string|number>={pagesize:6,page};
