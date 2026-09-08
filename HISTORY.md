@@ -1,6 +1,6 @@
 # Development history
 
-This public history reorganizes the original implementation into focused commits for review. It is a retrospective grouping of work completed during the initial build, not a reconstruction of the exact editing timestamps. The original three deployment commits remain retained locally; the private Site publication is unchanged.
+This public history reorganizes the original implementation into focused commits for review. It is a retrospective grouping of work completed during the initial build, not a reconstruction of the exact editing timestamps. The original three deployment commits were retained and later joined through an ancestry-only merge when publishing the reliability improvements. That merge preserved the current application tree and allowed the Sites source to advance without rewriting either history.
 
 The first eleven commits introduce the application in dependency order. The following five preserve the source-refresh, import-resume, recall-link, dictionary-coverage, and full-deployment validation improvements. The seventeenth commit prepares the public repository and gates scheduled work until launch. Preparatory commits are review units; the completed application is validated at the branch tip.
 
@@ -40,3 +40,9 @@ The repository contains application code, import tooling, migrations, and tests.
 ## Validation
 
 The application was built and checked with TypeScript, lint, parser/matching tests, isolated import integration checks, and real deployed US/Canadian queries. [VALIDATION.md](VALIDATION.md) records the coverage and capacity evidence. History reorganization does not change application behavior. The public-repository preparation adds an opt-in workflow gate and updates documentation.
+
+## Production update reliability
+
+The next commits execute [UPDATE_PLAN.md](UPDATE_PLAN.md) in dependency order: durable source-check status; reusable validated downloads and release checkpoints; resumable distinct-label refreshes; measured storage admission and conservative cleanup; source-specific workflow summaries and automated code checks. Each phase has its own focused push. Follow-up fixes are retained as separate commits so verification findings remain visible.
+
+The first Linux Actions run exposed the use of an unsupported `--host` option. The local launcher now uses Vinext's documented `--hostname` option and Vite's strict-port setting, so its readiness probe reaches the exact loopback listener on both macOS and Linux.

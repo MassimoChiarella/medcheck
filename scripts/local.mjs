@@ -219,7 +219,7 @@ async function readiness(base, token) {
 async function worker(settings, token, env) {
   const base = env.MEDCHECK_URL;
   if (await readiness(base, token)) return { child: null, base };
-  const child = start(process.execPath, [join(ROOT, 'node_modules/vinext/dist/cli.js'), 'dev', '--host', '127.0.0.1', '--port', String(settings.port), '--strictPort'], env);
+  const child = start(process.execPath, [join(ROOT, 'node_modules/vinext/dist/cli.js'), 'dev', '--hostname', '127.0.0.1', '--port', String(settings.port)], env);
   let failure;
   const exit = finished(child); exit.catch(error => { failure = error; });
   for (let attempt = 0; attempt < 90 && !stopping; attempt++) {
