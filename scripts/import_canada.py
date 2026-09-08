@@ -2,8 +2,9 @@
 """Validate the complete Canada Vigilance extract; publish an atomic, resumable index.
 No paid services, source sampling, or schema changes are performed by this script.
 """
-import argparse, hashlib, io, json, os, pathlib, re, sqlite3, sys, time, urllib.error, urllib.request, urllib.parse, zipfile
+import datetime, argparse, hashlib, io, json, os, pathlib, re, sqlite3, sys, time, urllib.error, urllib.request, urllib.parse, zipfile
 from update_run import SourceCheck
+from source_download import download_source,file_hash
 
 TRANSFORM_VERSION = '1'
 SOURCE = 'https://www.canada.ca/content/dam/hc-sc/migration/hc-sc/dhp-mps/alt_formats/zip/medeff/databasdon/extract_extrait.zip'
@@ -48,23 +49,7 @@ def source_date(raw,cutoff):
     return datetime.date(year,MONTHS[month],int(day)).isoformat()
 
 def download(path):
-    path.parent.mkdir(parents=True,exist_ok=True)
-    meta=path.with_suffix('.metadata.json')
-    headers={}
-    if path.exists() and meta.exists():
-        old=json.loads(meta.read_text());
-        if old.get('last_modified'):headers['If-Modified-Since']=old['last_modified']
-    try:
-        with urllib.request.urlopen(urllib.request.Request(SOURCE,headers=headers),timeout=60) as response:
-            stamp=response.headers.get('Last-Modified');temp=path.with_suffix('.part');size=0
-            with temp.open('wb') as target:
-                while chunk:=response.read(1024*1024):
-                    size+=len(chunk)
-                    if size>1_000_000_000:raise ValueError('Archive exceeds the 1 GB source-size ceiling')
-                    target.write(chunk)
-            temp.replace(path);meta.write_text(json.dumps({'last_modified':stamp,'url':SOURCE}))
-    except urllib.error.HTTPError as e:
-        if e.code!=304:raise
+    download_source(SOURCE,path,1_000_000_000)
     return path
 
 def build(archive_path, output):
@@ -75,7 +60,7 @@ def build(archive_path, output):
     gen=hashlib.sha256((digest+':'+TRANSFORM_VERSION).encode()).hexdigest()[:16];manifest_path=output.with_suffix('.manifest.json')
     if output.exists() and manifest_path.exists():
         prior=json.loads(manifest_path.read_text())
-        if prior.get('hash')==digest and prior.get('transform_version')==TRANSFORM_VERSION:return prior
+        if prior.get('hash')==digest and prior.get('transform_version')==TRANSFORM_VERSION and prior.get('bytes')==output.stat().st_size and prior.get('index_hash')==file_hash(output):return prior
     staging=output.with_suffix('.staging.sqlite')
     if staging.exists():staging.unlink()
     conn=sqlite3.connect(staging);conn.execute('PRAGMA journal_mode=OFF');conn.execute('PRAGMA synchronous=OFF');conn.execute('PRAGMA cache_size=-32768');conn.execute('PRAGMA temp_store=FILE')
@@ -120,7 +105,7 @@ def build(archive_path, output):
     # Reserve space for generation keys, staging+active copies, and source documents.
     if size*6>8_000_000_000:raise ValueError(f'Complete index {size} bytes exceeds staging headroom ceiling')
     staging.replace(output)
-    manifest={'id':gen,'hash':digest,'transform_version':TRANSFORM_VERSION,'cutoff':cutoff,'manifest':counts,'bytes':size,'batch_size':12000,'source_counts':source_counts,'source_url':SOURCE,'elapsed_seconds':round(time.monotonic()-started,2)}
+    manifest={'id':gen,'hash':digest,'transform_version':TRANSFORM_VERSION,'cutoff':cutoff,'manifest':counts,'bytes':size,'index_hash':file_hash(output),'batch_size':12000,'source_counts':source_counts,'source_url':SOURCE,'elapsed_seconds':round(time.monotonic()-started,2)}
     manifest_path.write_text(json.dumps(manifest,indent=2));print(json.dumps(manifest),flush=True);return manifest
 
 def validate_target(base,token):
@@ -246,11 +231,25 @@ def main():
     if not args.refresh_only:
         if args.upload:
             with SourceCheck('cv',base,token,post) as check:
-                check.phase('downloading');archive=args.archive or download(args.workdir/'extract_extrait.zip')
-                check.phase('validating');output=args.workdir/'canada.sqlite';manifest=build(archive,output)
-                check.phase('archiving');archive_source(archive,base,token,SOURCE)
-                check.phase('importing');changed=upload(output,manifest,base,token)
-                check.outcome='updated' if changed else 'unchanged'
+                state=check.send('release-state')
+                check.phase('downloading');archive=args.archive or args.workdir/'extract_extrait.zip'
+                if args.archive:
+                    document={'hash':file_hash(archive),'bytes':archive.stat().st_size,'etag':None,'lastModified':None,'verifiedAt':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+                else:
+                    prior=(state.get('release') or {}).get('documents',{}).get('extract_extrait.zip')
+                    document=download_source(SOURCE,archive,1_000_000_000,prior)
+                generation=hashlib.sha256((document['hash']+':'+TRANSFORM_VERSION).encode()).hexdigest()[:16]
+                active=state.get('active') or {}
+                if active.get('id')==generation and post(base,token,{'action':'archive-status','hash':document['hash']})['complete']:
+                    check.outcome='unchanged';print('Published Canada Vigilance release is unchanged; no index rebuild or import needed.')
+                else:
+                    if not archive.exists():document=download_source(SOURCE,archive,1_000_000_000,force=True)
+                    check.phase('validating');output=args.workdir/'canada.sqlite';manifest=build(archive,output)
+                    check.phase('archiving');archive_source(archive,base,token,SOURCE)
+                    check.phase('importing');changed=upload(output,manifest,base,token)
+                    check.outcome='updated' if changed else 'unchanged'
+                    generation=manifest['id']
+                check.send('release-save',generation=generation,datasetHash=document['hash'],documents={'extract_extrait.zip':document})
         else:
             archive=args.archive or download(args.workdir/'extract_extrait.zip');build(archive,args.workdir/'canada.sqlite')
     if args.refresh or args.refresh_only:

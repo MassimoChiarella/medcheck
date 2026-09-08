@@ -29,6 +29,16 @@ jobs:
         run: python -c "import os,sys; sys.path.insert(0,'scripts'); from import_canada import validate_target; validate_target(os.environ['MEDCHECK_URL'],os.environ['MEDCHECK_IMPORT_TOKEN'])"
       - name: Test source parsing and date handling
         run: python -m unittest discover -s tests -p 'test_*.py'
+      - name: Restore public source downloads
+        id: source-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            work/canada/extract_extrait.zip
+            work/canada/extract_extrait.metadata.json
+            work/dpd/*.json
+          key: medcheck-public-sources-v1-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: medcheck-public-sources-v1-${{ runner.os }}-
       - name: Refresh the complete Canadian human product catalogue
         id: catalogue
         continue-on-error: true
@@ -41,6 +51,15 @@ jobs:
         id: labels
         continue-on-error: true
         run: python scripts/import_canada.py --refresh-only
+      - name: Preserve only public download cache
+        if: always() && steps.source-cache.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            work/canada/extract_extrait.zip
+            work/canada/extract_extrait.metadata.json
+            work/dpd/*.json
+          key: ${{ steps.source-cache.outputs.cache-primary-key }}
       - name: Report incomplete updates
         if: always() && (steps.catalogue.outcome == 'failure' || steps.reports.outcome == 'failure' || steps.labels.outcome == 'failure')
         run: |

@@ -3,6 +3,7 @@
 import argparse,collections,datetime,hashlib,json,os,pathlib,time,urllib.request
 from import_canada import post,archive_source,validate_target
 from update_run import SourceCheck
+from source_download import download_source,read_metadata
 ENDPOINTS=['drugproduct','activeingredient','form','route','status']
 
 def collect(directory,offline):
@@ -11,10 +12,7 @@ def collect(directory,offline):
         path=directory/(name+'.json')
         if not offline:
             url='https://health-products.canada.ca/api/drug/'+name+'/?lang=en&type=json'
-            with urllib.request.urlopen(url,timeout=120) as response:
-                raw=response.read(80_000_001)
-                if len(raw)>80_000_000:raise ValueError('Product dataset exceeds safe size limit')
-            json.loads(raw);temp=path.with_suffix('.part');temp.write_bytes(raw);temp.replace(path)
+            download_source(url,path,80_000_000)
     values={name:json.loads((directory/(name+'.json')).read_text()) for name in ENDPOINTS}
     for name,data in values.items():
         if not isinstance(data,list) or not data:raise ValueError('Source dataset missing: '+name)
@@ -67,7 +65,9 @@ def import_products(args,base=None,token=None,check=None):
     run=post(base,token,{'action':'dpd-begin','id':generation,'count':len(entries),'observedAt':observed,'hash':digest})
     if run['state']=='active':
         print('Canadian catalogue unchanged; prior complete snapshot retained.')
-        if check:check.outcome='unchanged'
+        if check:
+            check.outcome='unchanged'
+            save_release(check,args.directory,run['id'],digest)
         return
     generation=run['id']
     for i in range(0,len(entries),400):
@@ -75,4 +75,10 @@ def import_products(args,base=None,token=None,check=None):
         if i%4000==0:print(f'{i:,} / {len(entries):,} products staged',flush=True)
     print(post(base,token,{'action':'dpd-complete','id':generation}),flush=True)
     while post(base,token,{'action':'dpd-cleanup'})['deleted']:pass
+    if check:save_release(check,args.directory,generation,digest)
+def save_release(check,directory,generation,digest):
+    documents={name+'.json':read_metadata(directory/(name+'.json')) for name in ENDPOINTS}
+    # Explicit offline input may not have network validators; it cannot seed release skipping.
+    if all(documents.values()):check.send('release-save',generation=generation,datasetHash=digest,documents=documents)
+
 if __name__=='__main__':main()

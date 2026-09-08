@@ -16,10 +16,10 @@ Execution order follows the dependencies below. Each completed phase is committe
 Acceptance: an operator can distinguish never checked, running, unchanged, updated, failed and interrupted. Failure messages do not expose credentials or replace usable evidence.
 
 ## 2. Release checks and reusable downloads
-- [ ] 2.1 Reuse conditional requests and verified local source manifests, with a bounded periodic full recheck.
-- [ ] 2.2 Compare an already installed CV generation before rebuilding the normalized index.
-- [ ] 2.3 Cache only public source files between Actions runs, separate from credentials and installation state.
-- [ ] 2.4 Test unchanged/changed sources, missing/corrupt cache, validator changes and interrupted downloads.
+- [x] 2.1 Reuse conditional requests and verified local source manifests, with a bounded periodic full recheck.
+- [x] 2.2 Compare an already installed CV generation before rebuilding the normalized index.
+- [x] 2.3 Cache only public source files between Actions runs, separate from credentials and installation state.
+- [x] 2.4 Test unchanged/changed sources, missing/corrupt cache, validator changes and interrupted downloads.
 
 Acceptance: an unchanged validated release needs no index rebuild or republishing; missing or questionable cache never becomes a false unchanged result.
 
@@ -55,3 +55,5 @@ Acceptance: failures are visible and recoverable, real source checks pass, the p
 - Planned push boundaries: plan; source-status contract; importer lifecycle; release/cache optimization; resumable refresh; storage safeguards; unattended workflow; release evidence. Boundaries may be combined only when needed to keep a commit coherent.
 
 - Phase 1: durable check lifecycle, source-directory status and isolated HTTP regressions passed. Existing import transaction tests also passed; interrupted checks retain previous data and success timestamps.
+
+- Phase 2: conditional downloads, seven-day full byte rechecks, active-release checkpoints and a public-files-only Actions cache passed unit and HTTP integration checks. Canada Vigilance supplies Last-Modified; DPD currently supplies no validators and still needs bounded file downloads to confirm changes.

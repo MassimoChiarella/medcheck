@@ -34,3 +34,15 @@ assert status('cv')['lastCheckSuccessAt']==success
 with urllib.request.urlopen(base+'/api/research?action=sources') as response:sources=json.load(response)['data']
 assert next(s for s in sources if s['id']=='cv')['checkOutcome']=='failed'
 print('PASS: check leases, pre-import failure, unchanged success, interruption, redaction and retained success dates.')
+
+# Release validators belong to the active dataset and current check, not a stale run.
+send(action='check-begin',source='cv',runId=run)
+active=send(action='release-state',source='cv')['active']
+if active:
+    document={'hash':active['hash'],'bytes':100,'etag':'"release"','lastModified':None,'verifiedAt':'2026-09-08T00:00:00+00:00'}
+    rejects(action='release-save',source='cv',runId=other,generation=active['id'],datasetHash=active['hash'],documents={'extract_extrait.zip':document})
+    rejects(action='release-save',source='cv',runId=run,generation=active['id'],datasetHash='f'*64,documents={'extract_extrait.zip':document})
+    send(action='release-save',source='cv',runId=run,generation=active['id'],datasetHash=active['hash'],documents={'extract_extrait.zip':document})
+    assert send(action='release-state',source='cv')['release']['documents']['extract_extrait.zip']==document
+send(action='check-finish',source='cv',runId=run,outcome='unchanged')
+print('PASS: release checkpoints require active source identity and current ownership.')
