@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   refresh:
-    if: vars.MEDCHECK_UPDATES_ENABLED == 'true'
+    if: github.event_name == 'workflow_dispatch' || vars.MEDCHECK_UPDATES_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 330
     env:
@@ -25,9 +25,24 @@ jobs:
       - name: Verify configuration
         run: |
           test -n "$MEDCHECK_URL" && test -n "$MEDCHECK_IMPORT_TOKEN" || { echo 'Configure the deployment URL and import secret before enabling this schedule.'; exit 1; }
+      - name: Validate the installation destination before downloading
+        run: python -c "import os,sys; sys.path.insert(0,'scripts'); from import_canada import validate_target; validate_target(os.environ['MEDCHECK_URL'],os.environ['MEDCHECK_IMPORT_TOKEN'])"
       - name: Test source parsing and date handling
         run: python -m unittest discover -s tests -p 'test_*.py'
       - name: Refresh the complete Canadian human product catalogue
+        id: catalogue
+        continue-on-error: true
         run: python scripts/import_products.py --upload
-      - name: Import complete published Canadian data and refresh tracked products
-        run: python scripts/import_canada.py --upload --refresh
+      - name: Import complete published Canadian reports
+        id: reports
+        continue-on-error: true
+        run: python scripts/import_canada.py --upload
+      - name: Refresh previously indexed US labels
+        id: labels
+        continue-on-error: true
+        run: python scripts/import_canada.py --refresh-only
+      - name: Report incomplete updates
+        if: always() && (steps.catalogue.outcome == 'failure' || steps.reports.outcome == 'failure' || steps.labels.outcome == 'failure')
+        run: |
+          echo 'At least one source update failed. Check the step logs; previously imported data is retained.'
+          exit 1
