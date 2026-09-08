@@ -5,7 +5,7 @@ Execution order follows the dependencies below. Each completed phase is committe
 ## 0. Baseline and delivery plan
 - [x] Trace the existing importer, source status, archive and scheduler paths.
 - [x] Define the phases, safeguards and verification criteria.
-- [ ] Preserve existing checks and validate each incremental change before pushing it.
+- [x] Preserve existing checks and validate each incremental change before pushing it.
 
 ## 1. Reliable source check status
 - [x] 1.1 Add bounded, durable source check records with attempt, heartbeat, success, outcome and phase.
@@ -43,9 +43,9 @@ Acceptance: cleanup cannot delete published evidence or active work. Referenced 
 - [x] 5.1 Produce a redacted, source-specific Actions summary and preserve failed-step outcomes.
 - [x] 5.2 Document owner failure notifications, recovery commands, cache behavior, retention and capacity limits.
 - [x] 5.3 Run parser, scheduler, API integration and failure-injection checks plus the production build.
-- [ ] 5.4 Deploy privately and verify real source checks, unchanged updates and complete existing coverage.
+- [x] 5.4 Deploy privately and verify real source checks, unchanged updates and complete existing coverage.
 - [ ] 5.5 Run the hosted workflow manually with this installation's credentials; record any access blocker precisely.
-- [ ] 5.6 Keep the daily launch gate off until public launch; verify the enable/disable procedure.
+- [x] 5.6 Keep the daily launch gate off until public launch; verify the enable/disable procedure.
 
 Acceptance: failures are visible and recoverable, real source checks pass, the prior complete Canadian coverage remains available, and no paid upgrade or public launch occurs as a side effect.
 
@@ -61,3 +61,8 @@ Acceptance: failures are visible and recoverable, real source checks pass, the p
 - Phase 3: unique SPL refresh cycles, per-document checkpoints, request pacing, Retry-After handling and bounded retries passed parser/client and isolated HTTP checks. Throttled records remain pending without consuming failure attempts; a new check resumes unfinished cycles.
 
 - Phase 4: measured admission/reservations, seven-day staging retention, bounded maintenance and archive ceilings passed 18 Node tests, 14 Python tests and the isolated Worker integration suite. Competing reservations, stale leases, dry runs, interrupted cleanup, restaging, retained history and rollback protection were verified.
+
+- Phase 5 private verification: owner-only deployment succeeded. Real DPD and CV checks were unchanged; all seven unique US labels refreshed, followed by a successful repeated CV check. Both storage audit modes retained all 223 archive objects (440,656,614 bytes). Full CV table counts still matched the manifest; D1 measured 2,195,230,720 bytes.
+- Phase 5.5 external blocker: GitHub permits source pushes and code-check runs, but its current token returns HTTP 403 for Actions Secrets, Variables and workflow dispatch. The browser is signed out. Hosted update execution cannot be claimed as verified until the owner reconnects with the required repository permissions. The same import commands passed against the private installation from this machine. No schedule-enabling action or paid upgrade was performed.
+
+- Linux release checks: [Actions run 34184300982](https://github.com/MassimoChiarella/medcheck/actions/runs/34184300982) passed lint, types, Node/Python tests, full disposable Worker integration and the production build after the hostname correction.
