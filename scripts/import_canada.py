@@ -119,7 +119,7 @@ def build(archive_path, output):
     # Reserve space for generation keys, staging+active copies, and source documents.
     if size*6>8_000_000_000:raise ValueError(f'Complete index {size} bytes exceeds staging headroom ceiling')
     staging.replace(output)
-    manifest={'id':gen,'hash':digest,'transform_version':TRANSFORM_VERSION,'cutoff':cutoff,'manifest':counts,'bytes':size,'batch_size':4000,'source_counts':source_counts,'source_url':SOURCE,'elapsed_seconds':round(time.monotonic()-started,2)}
+    manifest={'id':gen,'hash':digest,'transform_version':TRANSFORM_VERSION,'cutoff':cutoff,'manifest':counts,'bytes':size,'batch_size':12000,'source_counts':source_counts,'source_url':SOURCE,'elapsed_seconds':round(time.monotonic()-started,2)}
     manifest_path.write_text(json.dumps(manifest,indent=2));print(json.dumps(manifest),flush=True);return manifest
 
 def post(base,token,payload):
@@ -162,28 +162,43 @@ def archive_source(path,base,token,source_url):
     post(base,token,{'action':'archive-complete','hash':full_hash,'sourceUrl':source_url,'filename':path.name,'bytes':path.stat().st_size,'chunks':chunks})
     print('Source bytes archived:',path.name,flush=True)
 
+def bounded_batches(cursor,max_rows=12000,max_bytes=1_500_000):
+    rows=[];size=2
+    for row in cursor:
+        count=len(json.dumps(row,ensure_ascii=False,separators=(',',':')).encode())+1
+        if count>max_bytes:raise ValueError('A source row exceeds the bounded transport limit')
+        if rows and (len(rows)>=max_rows or size+count>max_bytes):
+            yield rows;rows=[];size=2
+        rows.append(row);size+=count
+    if rows:yield rows
+
 def upload(path,manifest,base,token):
     cleanup(base,token)
     gen=manifest['id'];post(base,token,{'action':'begin',**manifest})
     status=post(base,token,{'action':'status','id':gen})
     if status['run']['state']=='active':print('Current dataset already active.');return
     if status['run']['state']!='staging':raise RuntimeError('This source generation was retired or rolled back; a scheduled run cannot reactivate it. Await a newer release or explicitly restore a retained generation.')
-    last={x['tableName']:x['lastBatch'] for x in status['batches']};conn=sqlite3.connect(path);batch_size=manifest.get('batch_size',2000)
-    try:
-        for table in TABLES:
-            cursor=conn.execute(f'SELECT * FROM {table} ORDER BY id');number=0
-            while batch:=cursor.fetchmany(batch_size):
-                if number>last.get(table,-1):post(base,token,{'action':'batch','id':gen,'table':table,'batch':number,'rows':batch})
-                number+=1
-                if number%100==0:print(f'{table}: {min(number*batch_size,manifest["manifest"][table]):,} / {manifest["manifest"][table]:,}',flush=True)
+    last={x['tableName']:x for x in status['batches']};batch_size=12000
+    def upload_table(table):
+        with sqlite3.connect(path) as conn:
+            prior=last.get(table,{'rows':0,'lastBatch':-1});count=prior['rows']
+            cursor=conn.execute(f'SELECT * FROM {table} ORDER BY id LIMIT -1 OFFSET ?',(count,))
+            for number,batch in enumerate(bounded_batches(cursor,batch_size),start=prior['lastBatch']+1):
+                post(base,token,{'action':'batch','id':gen,'table':table,'batch':number,'rows':batch})
+                count+=len(batch)
+                if (number+1)%100==0:print(f'{table}: {count:,} / {manifest["manifest"][table]:,}',flush=True)
             post(base,token,{'action':'validate','id':gen,'table':table})
+            print(f'{table}: complete ({count:,} rows)',flush=True)
+    try:
+        # Three independent tables at a time; each table's acknowledged batches stay ordered.
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=3) as pool:list(pool.map(upload_table,TABLES))
         response=post(base,token,{'action':'promote','id':gen});print(json.dumps(response),flush=True)
         cleanup(base,token)
     except Exception as e:
         try:post(base,token,{'action':'fail','id':gen,'error':str(e)[:500]})
         except Exception:pass
         raise
-    finally:conn.close()
 
 def cleanup(base,token):
     retired=post(base,token,{'action':'retired'})

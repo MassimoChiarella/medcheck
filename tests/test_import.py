@@ -11,4 +11,15 @@ class ImportChecks(unittest.TestCase):
   self.assertEqual(mod.source_date('31-MAY-26','2026-05-31'),'2026-05-31')
   self.assertIsNone(mod.source_date('','2026-05-31'))
   with self.assertRaises(ValueError):mod.source_date('31-FEB-25','2026-05-31')
+
+class BatchTests(unittest.TestCase):
+    def test_batches_preserve_all_rows_and_bound_encoded_bytes(self):
+        bounded_batches=mod.bounded_batches
+        import json
+        rows=[(i,'é"'*100) for i in range(10)]
+        batches=list(bounded_batches(iter(rows),max_rows=4,max_bytes=1000))
+        self.assertEqual([r for b in batches for r in b],rows)
+        self.assertTrue(all(len(json.dumps(b,ensure_ascii=False,separators=(',',':')).encode())<=1000 for b in batches))
+        self.assertEqual(batches,list(bounded_batches(iter(rows),max_rows=4,max_bytes=1000)))
+
 if __name__=='__main__':unittest.main()
