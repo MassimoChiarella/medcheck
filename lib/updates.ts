@@ -28,8 +28,8 @@ export async function checkAction(b: Record<string, unknown>): Promise<Response 
   }
   if (!['check-begin', 'check-heartbeat', 'check-finish'].includes(String(b.action))) return null;
   if (!checkSources.has(String(b.source)) || !/^[a-f0-9]{32}$/.test(String(b.runId))) throw new Error('Invalid source check.');
-  const stamp = now(), phase = String(b.phase || 'checking');
-  if (!phases.has(phase)) throw new Error('Invalid update phase.');
+  const stamp = now(), phase = b.phase === undefined ? 'checking' : b.phase;
+  if (typeof phase !== 'string' || !phases.has(phase)) throw new Error('Invalid update phase.');
   if (b.action === 'check-begin') {
     const claimed = await db().prepare(`INSERT INTO update_runs(source,runId,started,heartbeat,outcome,phase)
       VALUES(?,?,?,?,'running',?) ON CONFLICT(source) DO UPDATE SET
