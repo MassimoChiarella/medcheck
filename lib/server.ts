@@ -5,6 +5,7 @@ import type { Product, ProductVersion, Result, SourceStatus } from './types';
 import { sources } from './sources';
 import { checkStatus, type UpdateRun } from './updates';
 import { putArchive } from './storage';
+import { isMedicationNameQuery, spellingCandidates } from './spelling';
 
 export const db=()=>env.DB;
 export const now=()=>new Date().toISOString();
@@ -73,6 +74,30 @@ export async function searchUS(query:string,page:number):Promise<Result<Product[
   return {...result(output,notes,notes.length?'partial':'complete'),fetchedAt:listing.fetched,page,hasMore:Number(listing.value.metadata?.total_pages)>page};
 }
 async function caEndpoint(name:string,params:Record<string,string|number>){return jsonSource('dpd',`https://health-products.canada.ca/api/drug/${name}/`,{...params,lang:'en',type:'json'});}
+export async function suggestMedication(query:string,market:'US'|'CA'):Promise<Result<string|null>>{
+  if(!isMedicationNameQuery(query))return result(null);
+  const terms=await jsonSource('rxnorm','https://rxnav.nlm.nih.gov/REST/spellingsuggestions.json',{name:query});
+  if(terms.stale)throw new Error('Spelling suggestions could not be refreshed.');
+  const candidates=spellingCandidates(query,terms.value.suggestionGroup?.suggestionList?.suggestion);
+  for(const name of candidates){
+    // Check the selected market before offering a spelling; never switch countries automatically.
+    if(market==='US'){
+      const listing=await jsonSource('dailymed','https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json',{pagesize:6,page:1,drug_name:name});
+      if(listing.stale)throw new Error('Spelling suggestions could not be verified.');
+      if(arr(listing.value.data).length)return {...result(name),fetchedAt:terms.fetched};
+    }else{
+      const indexed=await db().prepare("SELECT id FROM products WHERE id LIKE 'CA:%' AND (json_extract(data,'$.name') LIKE ? OR json_extract(data,'$.genericName') LIKE ?) LIMIT 1").bind('%'+name+'%','%'+name+'%').first();
+      if(indexed)return {...result(name),fetchedAt:terms.fetched};
+      const brands=await caEndpoint('drugproduct',{brandname:name});
+      if(brands.stale)throw new Error('Spelling suggestions could not be verified.');
+      if(arr<any>(brands.value).some(p=>p.class_name==='Human'))return {...result(name),fetchedAt:terms.fetched};
+      const ingredients=await caEndpoint('activeingredient',{ingredientname:name});
+      if(ingredients.stale)throw new Error('Spelling suggestions could not be verified.');
+      if(arr(ingredients.value).length)return {...result(name),fetchedAt:terms.fetched};
+    }
+  }
+  return {...result(null),fetchedAt:terms.fetched};
+}
 async function liveCaProduct(code:number):Promise<Product>{
   const [raw,active,form,route,status]=await Promise.all([caEndpoint('drugproduct',{id:code}),caEndpoint('activeingredient',{id:code}),caEndpoint('form',{id:code}),caEndpoint('route',{id:code}),caEndpoint('status',{id:code})]);
   if([raw,active,form,route,status].some(s=>s.stale))throw new Error('One or more Canadian product sections could not be refreshed.');

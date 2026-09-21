@@ -14,6 +14,7 @@ The launcher applies `drizzle/` migrations to local D1 before starting. Sites ap
 
 ## Research model
 
+- Empty first-page name searches can offer a clickable “Did you mean:” spelling from RxNorm, verified against the selected market. Suggestions require a close spelling match; they do not correct NDC/DIN codes, replace the query automatically, or imply medication equivalence.
 - Search resolves exact products: market, labeler/manufacturer, NDC or DIN, strength, form and route. DIN and NDC remain strings, including leading zeros.
 - DailyMed SPL set/version identifies the source document; product NDC identifies the selected product within it. Structured ingredient comparisons isolate that product. Narrative sections can cover several strengths; the app discloses that scope.
 - Differences describe labels and listed ingredients. There is no automatic inference of a confirmed formulation change, causation, interchangeability, or safety.
@@ -54,7 +55,7 @@ Capacity is a release gate, not a sampling switch. The May 31, 2026 complete CV 
 
 ## API and storage
 
-`GET /api/research?action=search|product|history|version|diff|evidence|reports|recalls|fda-label|terminology|sources` provides bounded/paginated results with notes, dates and completeness. `POST /api/import` is restricted to a server-side secret and fixed import actions/table schemas; clients cannot send SQL. D1 holds product snapshots, metadata, request cache, request budgets and CV indexes. R2 holds retrieved source label bytes, observed catalogue records and exact Canadian source bytes. Large source files are preserved as ordered 5 MB chunks with SHA-256 hashes and a validated reconstruction manifest. The app does not use an LLM to generate medical conclusions.
+`GET /api/research?action=search|suggestions|product|history|version|diff|evidence|reports|recalls|fda-label|terminology|sources` provides bounded/paginated results with notes, dates and completeness. `POST /api/import` is restricted to a server-side secret and fixed import actions/table schemas; clients cannot send SQL. D1 holds product snapshots, metadata, request cache, request budgets and CV indexes. R2 holds retrieved source label bytes, observed catalogue records and exact Canadian source bytes. Large source files are preserved as ordered 5 MB chunks with SHA-256 hashes and a validated reconstruction manifest. The app does not use an LLM to generate medical conclusions.
 
 All source fixtures are real public source documents; synthetic records exist only in isolated import tests. The app is an evidence research tool, not a clinical interaction database or treatment recommendation service.
 

@@ -1,5 +1,5 @@
 import { compareVersions } from '@/lib/core';
-import { aliases, caProduct, getProduct, getVersion, history, result, searchCA, searchUS, sourceStatuses } from '@/lib/server';
+import { aliases, caProduct, getProduct, getVersion, history, result, searchCA, searchUS, sourceStatuses, suggestMedication } from '@/lib/server';
 import { caReports, evidence, fdaLabel, recalls, usReports, type ReportFilters } from '@/lib/evidence';
 export async function GET(request:Request){
   try{
@@ -7,9 +7,9 @@ export async function GET(request:Request){
     const page=Number(q.get('page')||1);if(!Number.isInteger(page)||page<1||page>1001)throw new Error('Invalid page.');
     let value:unknown;
     if(action==='sources')value=result(await sourceStatuses());
-    else if(action==='search'){
+    else if(action==='search'||action==='suggestions'){
       const query=(q.get('q')||'').trim();if(query.length<3||query.length>100)throw new Error('Enter between 3 and 100 characters.');
-      value=q.get('market')==='CA'?await searchCA(query,page):await searchUS(query,page);
+      value=action==='suggestions'?await suggestMedication(query,q.get('market')==='CA'?'CA':'US'):q.get('market')==='CA'?await searchCA(query,page):await searchUS(query,page);
     }else{
       const id=q.get('id')||'';const p=await getProduct(id);
       if(action==='product'){const updated=p.market==='CA'?await caProduct(p.identifiers.drugCode!):p;value=result(updated);}
