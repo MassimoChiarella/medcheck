@@ -1,0 +1,53 @@
+{
+  "observedAt": "2026-09-22T04:35:18.439927+00:00",
+  "method": "HEAD",
+  "results": [
+    {
+      "url": "https://dailymed.nlm.nih.gov/dailymed/",
+      "status": 200,
+      "finalUrl": "https://dailymed.nlm.nih.gov/dailymed/"
+    },
+    {
+      "url": "https://lhncbc.nlm.nih.gov/RxNav/",
+      "status": 200,
+      "finalUrl": "https://lhncbc.nlm.nih.gov/RxNav/"
+    },
+    {
+      "url": "https://open.fda.gov/apis/drug/",
+      "status": 200,
+      "finalUrl": "https://open.fda.gov/apis/drug/"
+    },
+    {
+      "url": "https://health-products.canada.ca/dpd-bdpp/index-eng.jsp",
+      "status": 200,
+      "finalUrl": "https://health-products.canada.ca/dpd-bdpp/"
+    },
+    {
+      "url": "https://open.canada.ca/en/open-government-licence-canada",
+      "status": 200,
+      "finalUrl": "https://open.canada.ca/en/open-government-licence-canada"
+    },
+    {
+      "url": "https://www.canada.ca/en/health-canada/services/drugs-health-products/medeffect-canada/adverse-reaction-database.html",
+      "error": "The read operation timed out"
+    },
+    {
+      "url": "https://www.canada.ca/en/health-canada/services/drugs-health-products/medeffect-canada/adverse-reaction-database/medeffect-canada-caveat-privacy-statement-interpretation-data-extract-vigilance-adverse-reaction-online-database.html",
+      "error": "[Errno 60] Operation timed out"
+    },
+    {
+      "url": "https://www.vigiaccess.org/",
+      "status": 404
+    },
+    {
+      "url": "https://www.adrreports.eu/en/search_subst.html",
+      "status": 200,
+      "finalUrl": "https://www.adrreports.eu/en/search_subst.html"
+    }
+  ],
+  "followUp": {
+    "canadaVigilance": "Both timed-out HEAD URLs were readable through web retrieval on 2026-09-22.",
+    "who": "The HEAD 404 did not reflect browser usability: the VigiAccess landing page rendered in the browser with title, caveats and search-access control. No terms were accepted.",
+    "conclusion": "No broken directory link confirmed. HEAD checks alone are insufficient for these sites."
+  }
+}

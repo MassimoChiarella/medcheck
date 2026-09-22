@@ -1,0 +1,17 @@
+new owner published [Object: null prototype] {
+  generation: '2222222222222222',
+  coverage: '2026-06-30'
+}
+expired old owner then published [Object: null prototype] {
+  generation: '1111111111111111',
+  coverage: '2026-05-31'
+}
+capacity guard Database capacity limit reached. Previous complete data remains available; no storage upgrade was made.
+cache write still accepted true
+product write still accepted true
+R2 outage returned product status stale
+unarchived Canadian version committed 1
+archive retries after R2 recovery 0
+archive meter after failed writes 8000000
+exclusive scan actual archive bytes 0
+archive meter after exclusive full audit 8000000

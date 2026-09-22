@@ -1,0 +1,1096 @@
+{
+  "base": "https://medcheck-research.massimochiarella.chatgpt.site",
+  "observedAt": "2026-09-22T04:21:25.979283+00:00",
+  "results": [
+    {
+      "case": "sources",
+      "params": {
+        "action": "sources"
+      },
+      "status": 200,
+      "bytes": 3229,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:20:28.720Z",
+      "rows": 7,
+      "sample": [
+        {
+          "id": "dailymed",
+          "name": "DailyMed",
+          "status": "Available on request",
+          "lastSuccessAt": "2026-09-22T04:17:48.349Z"
+        },
+        {
+          "id": "rxnorm",
+          "name": "RxNorm",
+          "status": "Available on request",
+          "lastSuccessAt": "2026-09-21T15:38:42.502Z"
+        },
+        {
+          "id": "openfda",
+          "name": "openFDA",
+          "status": "Available on request",
+          "lastSuccessAt": "2026-09-21T15:18:11.262Z"
+        },
+        {
+          "id": "dpd",
+          "name": "Drug Product Database",
+          "status": "Imported dataset available",
+          "lastSuccessAt": "2026-09-08T00:34:50.697282+00:00"
+        },
+        {
+          "id": "cv",
+          "name": "Canada Vigilance",
+          "status": "Imported dataset available",
+          "lastSuccessAt": "2026-09-08T01:01:30.219Z"
+        },
+        {
+          "id": "who",
+          "name": "WHO \u00b7 VigiAccess",
+          "status": "External reference"
+        },
+        {
+          "id": "ema",
+          "name": "EMA \u00b7 EudraVigilance",
+          "status": "External reference"
+        }
+      ],
+      "seconds": 1.159
+    },
+    {
+      "case": "short-query",
+      "params": {
+        "action": "search",
+        "q": "ab"
+      },
+      "status": 400,
+      "bytes": 157,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": "Enter between 3 and 100 characters.",
+      "notes": [
+        "Unavailable data is not evidence of safety or an absence of reports."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": null,
+      "data": null,
+      "seconds": 0.737
+    },
+    {
+      "case": "long-query",
+      "params": {
+        "action": "search",
+        "q": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "status": 400,
+      "bytes": 157,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": "Enter between 3 and 100 characters.",
+      "notes": [
+        "Unavailable data is not evidence of safety or an absence of reports."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": null,
+      "data": null,
+      "seconds": 0.85
+    },
+    {
+      "case": "invalid-page",
+      "params": {
+        "action": "search",
+        "q": "sertraline",
+        "page": 0
+      },
+      "status": 400,
+      "bytes": 135,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": "Invalid page.",
+      "notes": [
+        "Unavailable data is not evidence of safety or an absence of reports."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": null,
+      "data": null,
+      "seconds": 0.719
+    },
+    {
+      "case": "unknown-action",
+      "params": {
+        "action": "not-a-real-action"
+      },
+      "status": 400,
+      "bytes": 156,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": "Select a valid medication product.",
+      "notes": [
+        "Unavailable data is not evidence of safety or an absence of reports."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": null,
+      "data": null,
+      "seconds": 0.823
+    },
+    {
+      "case": "invalid-product",
+      "params": {
+        "action": "product",
+        "id": "CA:1' OR 1=1"
+      },
+      "status": 400,
+      "bytes": 156,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": "Select a valid medication product.",
+      "notes": [
+        "Unavailable data is not evidence of safety or an absence of reports."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": null,
+      "data": null,
+      "seconds": 0.744
+    },
+    {
+      "case": "typo-empty",
+      "params": {
+        "action": "search",
+        "q": "sertaline",
+        "market": "US"
+      },
+      "status": 200,
+      "bytes": 112,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": false,
+      "fetchedAt": "2026-09-22T04:20:33.518Z",
+      "rows": 0,
+      "sample": [],
+      "seconds": 1.036
+    },
+    {
+      "case": "typo-suggestion",
+      "params": {
+        "action": "suggestions",
+        "q": "sertaline",
+        "market": "US"
+      },
+      "status": 200,
+      "bytes": 97,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:20:35.061Z",
+      "data": "sertraline",
+      "seconds": 2.091
+    },
+    {
+      "case": "random-empty",
+      "params": {
+        "action": "search",
+        "q": "zzqzxvbnm",
+        "market": "US"
+      },
+      "status": 200,
+      "bytes": 112,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": false,
+      "fetchedAt": "2026-09-22T04:20:37.039Z",
+      "rows": 0,
+      "sample": [],
+      "seconds": 1.434
+    },
+    {
+      "case": "random-suggestion",
+      "params": {
+        "action": "suggestions",
+        "q": "zzqzxvbnm",
+        "market": "US"
+      },
+      "status": 200,
+      "bytes": 89,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:20:38.493Z",
+      "data": null,
+      "seconds": 1.494
+    },
+    {
+      "case": "numeric-no-correction",
+      "params": {
+        "action": "suggestions",
+        "q": "02238281",
+        "market": "CA"
+      },
+      "status": 200,
+      "bytes": 89,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:20:39.563Z",
+      "data": null,
+      "seconds": 0.895
+    },
+    {
+      "case": "exact-ndc",
+      "params": {
+        "action": "search",
+        "q": "55154-4687",
+        "market": "US"
+      },
+      "status": 200,
+      "bytes": 1249,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": false,
+      "fetchedAt": "2026-09-22T04:20:40.862Z",
+      "rows": 2,
+      "sample": [
+        {
+          "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "55154-4687",
+            "setid": "7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6"
+          }
+        },
+        {
+          "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4692",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "55154-4692",
+            "setid": "7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6"
+          }
+        }
+      ],
+      "seconds": 1.551
+    },
+    {
+      "case": "us-generic",
+      "params": {
+        "action": "search",
+        "q": "Sertraline",
+        "market": "US"
+      },
+      "status": 200,
+      "bytes": 4089,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": true,
+      "fetchedAt": "2026-09-22T04:17:44.069Z",
+      "rows": 7,
+      "sample": [
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425",
+          "name": "Sertraline",
+          "market": "US",
+          "identifiers": {
+            "ndc": "70518-4425",
+            "setid": "7efc1dd5-8671-4bed-9c16-ef6b9f36afc4"
+          }
+        },
+        {
+          "id": "US:7d598f1a-6c76-458a-a155-7a6a0743a2d3:70518-4307",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "70518-4307",
+            "setid": "7d598f1a-6c76-458a-a155-7a6a0743a2d3"
+          }
+        },
+        {
+          "id": "US:9dacf5b7-1a23-4767-a074-11f26623e48b:82804-311",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "82804-311",
+            "setid": "9dacf5b7-1a23-4767-a074-11f26623e48b"
+          }
+        },
+        {
+          "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "55154-4687",
+            "setid": "7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6"
+          }
+        },
+        {
+          "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4692",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "55154-4692",
+            "setid": "7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6"
+          }
+        },
+        {
+          "id": "US:1afd0016-d0ee-4e25-a1a4-b66f228e2f9c:68788-8689",
+          "name": "Sertraline hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "68788-8689",
+            "setid": "1afd0016-d0ee-4e25-a1a4-b66f228e2f9c"
+          }
+        },
+        {
+          "id": "US:455c8416-c878-4283-a42f-4df896870a4e:70518-4171",
+          "name": "Sertraline hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "70518-4171",
+            "setid": "455c8416-c878-4283-a42f-4df896870a4e"
+          }
+        }
+      ],
+      "seconds": 1.142
+    },
+    {
+      "case": "ca-din-leading-zero",
+      "params": {
+        "action": "search",
+        "q": "02238280",
+        "market": "CA"
+      },
+      "status": 200,
+      "bytes": 536,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": false,
+      "fetchedAt": "2026-09-22T04:20:44.284Z",
+      "rows": 1,
+      "sample": [
+        {
+          "id": "CA:61676",
+          "name": "APO-SERTRALINE",
+          "market": "CA",
+          "identifiers": {
+            "drugCode": 61676,
+            "din": "02238280"
+          },
+          "status": "Marketed"
+        }
+      ],
+      "seconds": 2.059
+    },
+    {
+      "case": "ca-generic",
+      "params": {
+        "action": "search",
+        "q": "Sertraline",
+        "market": "CA"
+      },
+      "status": 200,
+      "bytes": 3554,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": true,
+      "fetchedAt": "2026-09-22T04:20:46.737Z",
+      "rows": 8,
+      "sample": [
+        {
+          "id": "CA:61676",
+          "name": "APO-SERTRALINE",
+          "market": "CA",
+          "identifiers": {
+            "drugCode": 61676,
+            "din": "02238280"
+          },
+          "status": "Marketed"
+        },
+        {
+          "id": "CA:61677",
+          "name": "APO-SERTRALINE",
+          "market": "CA",
+          "identifiers": {
+            "drugCode": 61677,
+            "din": "02238281"
+          },
+          "status": "Marketed"
+        },
+        {
+          "id": "CA:61678",
+          "name": "APO-SERTRALINE",
+          "market": "CA",
+          "identifiers": {
+            "drugCode": 61678,
+            "din": "02238282"
+          },
+          "status": "Marketed"
+        },
+        {
+          "id": "CA:64051",
+          "name": "TEVA-SERTRALINE",
+          "market": "CA",
+          "identifiers": {
+            "drugCode": 64051,
+            "din": "02240481"
+          },
+          "status": "Marketed"
+        },
+        {
+          "id": "CA:64054",
+          "name": "TEVA-SERTRALINE",
+          "market": "CA",
+          "identifiers": {
+            "drugCode": 64054,
+            "din": "02240484"
+          },
+          "status": "Marketed"
+        },
+        {
+          "id": "CA:64055",
+          "name": "TEVA-SERTRALINE",
+          "market": "CA",
+          "identifiers": {
+            "drugCode": 64055,
+            "din": "02240485"
+          },
+          "status": "Marketed"
+        },
+        {
+          "id": "CA:64918",
+          "name": "PRO-SERTRALINE",
+          "market": "CA",
+          "identifiers": {
+            "drugCode": 64918,
+            "din": "02241302"
+          },
+          "status": "Marketed"
+        },
+        {
+          "id": "CA:64919",
+          "name": "PRO-SERTRALINE",
+          "market": "CA",
+          "identifiers": {
+            "drugCode": 64919,
+            "din": "02241303"
+          },
+          "status": "Marketed"
+        }
+      ],
+      "seconds": 2.477
+    },
+    {
+      "case": "ca-spelling",
+      "params": {
+        "action": "suggestions",
+        "q": "sertaline",
+        "market": "CA"
+      },
+      "status": 200,
+      "bytes": 97,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:20:35.061Z",
+      "data": "sertraline",
+      "seconds": 0.871
+    },
+    {
+      "case": "us-combination",
+      "params": {
+        "action": "search",
+        "q": "Bactrim",
+        "market": "US"
+      },
+      "status": 200,
+      "bytes": 1877,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": false,
+      "fetchedAt": "2026-09-22T04:20:48.749Z",
+      "rows": 3,
+      "sample": [
+        {
+          "id": "US:f59d0c04-9c66-4d53-a0e1-cb55570deb62:49708-146",
+          "name": "Bactrim DS",
+          "market": "US",
+          "identifiers": {
+            "ndc": "49708-146",
+            "setid": "f59d0c04-9c66-4d53-a0e1-cb55570deb62"
+          }
+        },
+        {
+          "id": "US:f59d0c04-9c66-4d53-a0e1-cb55570deb62:49708-145",
+          "name": "Bactrim",
+          "market": "US",
+          "identifiers": {
+            "ndc": "49708-145",
+            "setid": "f59d0c04-9c66-4d53-a0e1-cb55570deb62"
+          }
+        },
+        {
+          "id": "US:0138a156-859a-48a3-bf5a-e2db0cc7f2f9:54868-0337",
+          "name": "Bactrim DS",
+          "market": "US",
+          "identifiers": {
+            "ndc": "54868-0337",
+            "setid": "0138a156-859a-48a3-bf5a-e2db0cc7f2f9"
+          }
+        }
+      ],
+      "seconds": 3.368
+    },
+    {
+      "case": "us-veterinary",
+      "params": {
+        "action": "search",
+        "q": "carprofen",
+        "market": "US"
+      },
+      "status": 200,
+      "bytes": 111,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": true,
+      "fetchedAt": "2026-09-22T04:20:53.101Z",
+      "rows": 0,
+      "sample": [],
+      "seconds": 5.327
+    },
+    {
+      "case": "unsupported-market",
+      "params": {
+        "action": "search",
+        "q": "Sertraline",
+        "market": "GB"
+      },
+      "status": 200,
+      "bytes": 4089,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": true,
+      "fetchedAt": "2026-09-22T04:17:44.069Z",
+      "rows": 7,
+      "sample": [
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425",
+          "name": "Sertraline",
+          "market": "US",
+          "identifiers": {
+            "ndc": "70518-4425",
+            "setid": "7efc1dd5-8671-4bed-9c16-ef6b9f36afc4"
+          }
+        },
+        {
+          "id": "US:7d598f1a-6c76-458a-a155-7a6a0743a2d3:70518-4307",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "70518-4307",
+            "setid": "7d598f1a-6c76-458a-a155-7a6a0743a2d3"
+          }
+        },
+        {
+          "id": "US:9dacf5b7-1a23-4767-a074-11f26623e48b:82804-311",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "82804-311",
+            "setid": "9dacf5b7-1a23-4767-a074-11f26623e48b"
+          }
+        },
+        {
+          "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "55154-4687",
+            "setid": "7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6"
+          }
+        },
+        {
+          "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4692",
+          "name": "Sertraline Hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "55154-4692",
+            "setid": "7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6"
+          }
+        },
+        {
+          "id": "US:1afd0016-d0ee-4e25-a1a4-b66f228e2f9c:68788-8689",
+          "name": "Sertraline hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "68788-8689",
+            "setid": "1afd0016-d0ee-4e25-a1a4-b66f228e2f9c"
+          }
+        },
+        {
+          "id": "US:455c8416-c878-4283-a42f-4df896870a4e:70518-4171",
+          "name": "Sertraline hydrochloride",
+          "market": "US",
+          "identifiers": {
+            "ndc": "70518-4171",
+            "setid": "455c8416-c878-4283-a42f-4df896870a4e"
+          }
+        }
+      ],
+      "seconds": 1.231
+    },
+    {
+      "case": "us-product",
+      "params": {
+        "action": "product",
+        "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425",
+        "source": "US"
+      },
+      "status": 200,
+      "bytes": 670,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:20:58.475Z",
+      "dataKeys": [
+        "id",
+        "name",
+        "genericName",
+        "market",
+        "manufacturer",
+        "strength",
+        "form",
+        "route",
+        "identifiers",
+        "ingredients",
+        "sourceUrl",
+        "observedAt"
+      ],
+      "seconds": 0.877
+    },
+    {
+      "case": "us-history",
+      "params": {
+        "action": "history",
+        "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425",
+        "source": "US"
+      },
+      "status": 200,
+      "bytes": 1053,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": 3,
+      "hasMore": null,
+      "fetchedAt": "2026-09-21T15:16:17.986Z",
+      "rows": 3,
+      "sample": [
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425@4",
+          "version": "4",
+          "publishedAt": "2026-09-14"
+        },
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425@3",
+          "version": "3",
+          "publishedAt": "2025-10-06"
+        },
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425@1",
+          "version": "1",
+          "publishedAt": "2025-08-07"
+        }
+      ],
+      "seconds": 0.965
+    },
+    {
+      "case": "us-diff",
+      "params": {
+        "action": "diff",
+        "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425",
+        "before": "3",
+        "after": "4"
+      },
+      "status": 200,
+      "bytes": 63628,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:21:00.369Z",
+      "dataKeys": [
+        "before",
+        "after",
+        "changes",
+        "notes"
+      ],
+      "seconds": 0.939
+    },
+    {
+      "case": "us-evidence",
+      "params": {
+        "action": "evidence",
+        "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425",
+        "source": "US"
+      },
+      "status": 200,
+      "bytes": 31038,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "Sertraline: warnings could not be extracted.",
+        "Sertraline: precautions could not be extracted.",
+        "Label sections can cover several strengths or products within the same SPL document. Read the surrounding wording to establish which product a warning concerns.",
+        "Highlighted names are text matches, not a clinical interaction assessment. Class-level references may not name a selected medication. No match does not mean safe together."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:17:46.400Z",
+      "rows": 5,
+      "sample": [
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425:Boxed warning",
+          "market": "US",
+          "version": "4",
+          "effectiveAt": "2026-09-10"
+        },
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425:Drug interactions",
+          "market": "US",
+          "version": "4",
+          "effectiveAt": "2026-09-10"
+        },
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425:Contraindications",
+          "market": "US",
+          "version": "4",
+          "effectiveAt": "2026-09-10"
+        },
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425:Warnings and precautions",
+          "market": "US",
+          "version": "4",
+          "effectiveAt": "2026-09-10"
+        },
+        {
+          "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425:Adverse reactions",
+          "market": "US",
+          "version": "4",
+          "effectiveAt": "2026-09-10"
+        }
+      ],
+      "seconds": 1.256
+    },
+    {
+      "case": "us-recalls",
+      "params": {
+        "action": "recalls",
+        "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425",
+        "source": "US"
+      },
+      "status": 200,
+      "bytes": 4152,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "Historical US recall search results are name matches. Check the manufacturer, product, and lot. These records do not establish current recall status or a Canadian recall."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-21T15:16:16.239Z",
+      "rows": 7,
+      "sample": [
+        {
+          "id": "D-0227-2026"
+        },
+        {
+          "id": "D-0205-2024"
+        },
+        {
+          "id": "D-0151-2018"
+        },
+        {
+          "id": "D-0857-2016"
+        },
+        {
+          "id": "D-891-2015"
+        },
+        {
+          "id": "D-746-2014"
+        },
+        {
+          "id": "D-523-2014"
+        }
+      ],
+      "seconds": 0.874
+    },
+    {
+      "case": "us-reports",
+      "params": {
+        "action": "reports",
+        "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425",
+        "source": "US"
+      },
+      "status": 200,
+      "bytes": 29615,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "These are reports of suspected events, not proof that a medication caused a reaction. Counts cannot tell you how likely a reaction is or which medication is safer. A report can mention several medicines and reactions.",
+        "Counts refer to source-matched reports, not verified exposures to the selected product or formulation. Reporter country does not establish the market of the medication."
+      ],
+      "total": 218296,
+      "hasMore": true,
+      "fetchedAt": "2026-09-22T04:21:14.255Z",
+      "rows": 25,
+      "sample": [
+        {
+          "id": "26940179",
+          "version": "1",
+          "eventCountry": "GB"
+        },
+        {
+          "id": "26940361",
+          "version": "1",
+          "eventCountry": "US"
+        },
+        {
+          "id": "26940748",
+          "version": "1",
+          "eventCountry": "GB"
+        },
+        {
+          "id": "26941037",
+          "version": "1",
+          "eventCountry": "US"
+        },
+        {
+          "id": "26941349",
+          "version": "1",
+          "eventCountry": "EU"
+        },
+        {
+          "id": "26941423",
+          "version": "1",
+          "eventCountry": "AU"
+        },
+        {
+          "id": "26941424",
+          "version": "1",
+          "eventCountry": "AU"
+        },
+        {
+          "id": "26941638",
+          "version": "1",
+          "eventCountry": "GB"
+        }
+      ],
+      "seconds": 13.394
+    },
+    {
+      "case": "same-ingredient-pair",
+      "params": {
+        "action": "reports",
+        "id": "US:7efc1dd5-8671-4bed-9c16-ef6b9f36afc4:70518-4425",
+        "other": "US:7d598f1a-6c76-458a-a155-7a6a0743a2d3:70518-4307",
+        "source": "US"
+      },
+      "status": 200,
+      "bytes": 289,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": null,
+      "notes": [
+        "These selections share a name or active ingredient. Co-report comparison would be ambiguous; compare their product descriptions and labels instead."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:21:17.040Z",
+      "rows": 0,
+      "sample": [],
+      "seconds": 1.136
+    },
+    {
+      "case": "ca-product",
+      "params": {
+        "action": "product",
+        "id": "CA:61676",
+        "source": "CA"
+      },
+      "status": 200,
+      "bytes": 509,
+      "contentType": "application/json",
+      "completeness": "complete",
+      "error": null,
+      "notes": [],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:21:18.295Z",
+      "dataKeys": [
+        "id",
+        "name",
+        "genericName",
+        "market",
+        "manufacturer",
+        "strength",
+        "form",
+        "route",
+        "identifiers",
+        "ingredients",
+        "sourceUrl",
+        "status"
+      ],
+      "seconds": 1.25
+    },
+    {
+      "case": "ca-history",
+      "params": {
+        "action": "history",
+        "id": "CA:61676",
+        "source": "CA"
+      },
+      "status": 200,
+      "bytes": 875,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "Canadian history starts at the first observed snapshot. It is not a complete historical formulation archive."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:21:18.927Z",
+      "rows": 1,
+      "sample": [
+        {
+          "id": "CA:61676@2026-09-08T00:34:50.697282+00:00",
+          "version": "2026-09-08T00:34:50.697282+00:00"
+        }
+      ],
+      "seconds": 0.637
+    },
+    {
+      "case": "ca-evidence",
+      "params": {
+        "action": "evidence",
+        "id": "CA:61676",
+        "source": "CA"
+      },
+      "status": 200,
+      "bytes": 700,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "APO-SERTRALINE: Canadian product monographs are linked from the official product page. The product API does not supply interaction text; US labeling is not substituted for Canadian labeling.",
+        "Label sections can cover several strengths or products within the same SPL document. Read the surrounding wording to establish which product a warning concerns.",
+        "Highlighted names are text matches, not a clinical interaction assessment. Class-level references may not name a selected medication. No match does not mean safe together."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:21:20.170Z",
+      "rows": 0,
+      "sample": [],
+      "seconds": 1.242
+    },
+    {
+      "case": "ca-recalls",
+      "params": {
+        "action": "recalls",
+        "id": "CA:61676",
+        "source": "CA"
+      },
+      "status": 200,
+      "bytes": 145,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "No historical US recall records matched this name search."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": "2026-09-22T04:21:24.170Z",
+      "rows": 0,
+      "sample": [],
+      "seconds": 3.982
+    },
+    {
+      "case": "ca-reports",
+      "params": {
+        "action": "reports",
+        "id": "CA:61676",
+        "source": "CA"
+      },
+      "status": 200,
+      "bytes": 1040,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "Select the corresponding entries in the Canada Vigilance drug dictionary. A report-dictionary name does not establish an exact DPD product, manufacturer, or formulation match.",
+        "Canada Vigilance contains suspected adverse reactions. Reports can be incomplete or duplicated; the latest follow-up is retained. Counts do not establish causation, incidence, or comparative safety. Contains information licensed under the Open Government Licence \u2013 Canada."
+      ],
+      "total": null,
+      "hasMore": false,
+      "fetchedAt": "2026-09-22T04:21:26.024Z",
+      "rows": 0,
+      "sample": [],
+      "seconds": 1.87
+    }
+  ]
+}

@@ -1,0 +1,211 @@
+{
+  "auditReportVersion": 2,
+  "vulnerabilities": {
+    "@cloudflare/vite-plugin": {
+      "name": "@cloudflare/vite-plugin",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        "miniflare",
+        "wrangler"
+      ],
+      "effects": [],
+      "range": "<=0.0.0-7ae5dd357 || 1.2.3 - 1.54.6",
+      "nodes": [
+        "node_modules/@cloudflare/vite-plugin"
+      ],
+      "fixAvailable": {
+        "name": "@cloudflare/vite-plugin",
+        "version": "1.57.1",
+        "isSemVerMajor": false
+      }
+    },
+    "@esbuild-kit/core-utils": {
+      "name": "@esbuild-kit/core-utils",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "esbuild"
+      ],
+      "effects": [
+        "@esbuild-kit/esm-loader"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@esbuild-kit/core-utils"
+      ],
+      "fixAvailable": {
+        "name": "drizzle-kit",
+        "version": "0.18.1",
+        "isSemVerMajor": true
+      }
+    },
+    "@esbuild-kit/esm-loader": {
+      "name": "@esbuild-kit/esm-loader",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        "@esbuild-kit/core-utils"
+      ],
+      "effects": [
+        "drizzle-kit"
+      ],
+      "range": "*",
+      "nodes": [
+        "node_modules/@esbuild-kit/esm-loader"
+      ],
+      "fixAvailable": {
+        "name": "drizzle-kit",
+        "version": "0.18.1",
+        "isSemVerMajor": true
+      }
+    },
+    "drizzle-kit": {
+      "name": "drizzle-kit",
+      "severity": "moderate",
+      "isDirect": true,
+      "via": [
+        "@esbuild-kit/esm-loader"
+      ],
+      "effects": [],
+      "range": "0.19.0 - 1.0.0-beta.1-fd8bfcc",
+      "nodes": [
+        "node_modules/drizzle-kit"
+      ],
+      "fixAvailable": {
+        "name": "drizzle-kit",
+        "version": "0.18.1",
+        "isSemVerMajor": true
+      }
+    },
+    "esbuild": {
+      "name": "esbuild",
+      "severity": "moderate",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1102341,
+          "name": "esbuild",
+          "dependency": "esbuild",
+          "title": "esbuild enables any website to send any requests to the development server and read the response",
+          "url": "https://github.com/advisories/GHSA-67mh-4wv8-2f99",
+          "severity": "moderate",
+          "cwe": [
+            "CWE-346"
+          ],
+          "cvss": {
+            "score": 5.3,
+            "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"
+          },
+          "range": "<=0.24.2"
+        }
+      ],
+      "effects": [
+        "@esbuild-kit/core-utils"
+      ],
+      "range": "<=0.24.2",
+      "nodes": [
+        "node_modules/@esbuild-kit/core-utils/node_modules/esbuild"
+      ],
+      "fixAvailable": {
+        "name": "drizzle-kit",
+        "version": "0.18.1",
+        "isSemVerMajor": true
+      }
+    },
+    "miniflare": {
+      "name": "miniflare",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        "sharp"
+      ],
+      "effects": [
+        "@cloudflare/vite-plugin",
+        "wrangler"
+      ],
+      "range": "<=0.0.0-fec45ed61 || 4.20250508.3 - 5.20260908.0-alpha",
+      "nodes": [
+        "node_modules/miniflare"
+      ],
+      "fixAvailable": {
+        "name": "@cloudflare/vite-plugin",
+        "version": "1.57.1",
+        "isSemVerMajor": false
+      }
+    },
+    "sharp": {
+      "name": "sharp",
+      "severity": "high",
+      "isDirect": false,
+      "via": [
+        {
+          "source": 1193725,
+          "name": "sharp",
+          "dependency": "sharp",
+          "title": "sharp: Vulnerabilities in libheif: GHSA-g89c-p67h-r497 and GHSA-2jg2-4ch7-h545",
+          "url": "https://github.com/advisories/GHSA-rgj7-g3m4-5g8c",
+          "severity": "high",
+          "cwe": [
+            "CWE-122"
+          ],
+          "cvss": {
+            "score": 0,
+            "vectorString": null
+          },
+          "range": "<0.35.4"
+        }
+      ],
+      "effects": [
+        "miniflare"
+      ],
+      "range": "<0.35.4",
+      "nodes": [
+        "node_modules/sharp"
+      ],
+      "fixAvailable": {
+        "name": "@cloudflare/vite-plugin",
+        "version": "1.57.1",
+        "isSemVerMajor": false
+      }
+    },
+    "wrangler": {
+      "name": "wrangler",
+      "severity": "high",
+      "isDirect": true,
+      "via": [
+        "miniflare"
+      ],
+      "effects": [
+        "@cloudflare/vite-plugin"
+      ],
+      "range": "<=0.0.0-7ae5dd357 || 4.16.0 - 4.130.0",
+      "nodes": [
+        "node_modules/wrangler"
+      ],
+      "fixAvailable": {
+        "name": "@cloudflare/vite-plugin",
+        "version": "1.57.1",
+        "isSemVerMajor": false
+      }
+    }
+  },
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 4,
+      "high": 4,
+      "critical": 0,
+      "total": 8
+    },
+    "dependencies": {
+      "prod": 483,
+      "dev": 223,
+      "optional": 230,
+      "peer": 33,
+      "peerOptional": 0,
+      "total": 791
+    }
+  }
+}

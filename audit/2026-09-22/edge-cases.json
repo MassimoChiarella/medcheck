@@ -1,0 +1,65 @@
+[
+  {
+    "name": "ca-long-ingredient-dictionary",
+    "params": {
+      "action": "reports",
+      "id": "CA:942",
+      "source": "CA"
+    }
+  },
+  {
+    "name": "ca-selected-dictionary",
+    "params": {
+      "action": "reports",
+      "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+      "source": "CA",
+      "cvIds": "[[\"6036\"]]"
+    }
+  },
+  {
+    "name": "impossible-date",
+    "params": {
+      "action": "reports",
+      "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+      "source": "US",
+      "from": "2026-02-30"
+    }
+  },
+  {
+    "name": "reversed-date-range",
+    "params": {
+      "action": "reports",
+      "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+      "source": "US",
+      "from": "2026-09-01",
+      "to": "2026-01-01"
+    }
+  },
+  {
+    "name": "malformed-dictionary-json",
+    "params": {
+      "action": "reports",
+      "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+      "source": "CA",
+      "cvIds": "not-json"
+    }
+  },
+  {
+    "name": "ca-no-matching-reports",
+    "params": {
+      "action": "reports",
+      "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+      "source": "CA",
+      "cvIds": "[[\"6036\"]]",
+      "reaction": "ZZQZXVBNM"
+    }
+  },
+  {
+    "name": "warm-us-reports",
+    "params": {
+      "action": "reports",
+      "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+      "source": "US"
+    }
+  }
+]

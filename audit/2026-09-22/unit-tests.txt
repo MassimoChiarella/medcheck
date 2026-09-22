@@ -1,0 +1,45 @@
+npm notice run medcheck@0.1.0 test
+npm notice run node --experimental-strip-types --test tests/core.test.ts tests/local.test.mjs tests/storage.test.ts tests/research-client.test.ts tests/spelling.test.ts && python3 -m unittest discover -s tests -p "test_*.py"
+✔ real SPL extracts nested warnings and isolates strengths and active-moiety basis (0.397166ms)
+✔ one-unit numerator and product-specific edit (23.325625ms)
+✔ missing fields are unknown; order-only edits do not create changes (1.160041ms)
+✔ archive identity and unsafe XML are rejected (11.088125ms)
+✔ separate medication records required; overlapping aliases rejected (0.135958ms)
+✔ latest source case version retained without combining authorities (0.070417ms)
+✔ ingredient and strength-basis identifiers participate in comparison (1.46575ms)
+✔ combination products cannot be reduced to one component (0.08225ms)
+✔ legacy warning sections remain readable (11.474292ms)
+✔ a fresh clone creates its own persistent secret without overwriting other settings (7.938667ms)
+✔ local uploads cannot inherit another installation destination or authorization (0.23575ms)
+✔ daily checks catch up after downtime and do not retry failures every minute (0.174209ms)
+✔ an update lock excludes a concurrent process and recovers a dead owner (13.087417ms)
+✔ concurrent processes cannot both reclaim a crashed update owner (79.352125ms)
+✔ first-run flags require bounded ports and explicit known choices (0.530875ms)
+✔ a running schedule honors saved opt-out and data changes without moving its upload destination (1.835666ms)
+✔ legacy migration adoption requires exact existing definitions (0.305834ms)
+✔ research requests distinguish access failures, gateway responses and source errors (20.053042ms)
+✔ medication spellings rank common typos and reject unrelated or identical terms (2.389208ms)
+✔ suggestions are only offered for complete empty first-page name searches (0.262209ms)
+✔ only aged partial uploads are cleanup candidates; completed evidence stays protected (3.097333ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 189.754875
+.....Label cycle: {}
+Label refresh: {"completed": 2, "remaining": 1, "complete": false, "blocked": true, "changed": 0}
+..Label cycle: {}
+Label refresh: {"completed": 10, "remaining": 2, "complete": false, "blocked": true, "changed": 5}
+.Label cycle: {}
+Label refresh: {"completed": 1, "remaining": 1, "complete": false, "blocked": false, "changed": 0, "retryAfter": 120}
+Label refresh: {"completed": 2, "remaining": 0, "complete": true, "blocked": false, "changed": 0, "retryAfter": 0}
+.Label cycle: {}
+......
+----------------------------------------------------------------------
+Ran 15 tests in 1.536s
+
+OK
+Published Canada Vigilance release is unchanged; no index rebuild or import needed.

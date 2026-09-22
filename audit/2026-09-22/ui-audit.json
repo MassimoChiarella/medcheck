@@ -1,0 +1,31 @@
+{
+  "date": "2026-09-22",
+  "method": "Chromium in-app browser, real locator/keyboard interactions, accessibility trees, DOM geometry, representative screenshots, and source inspection",
+  "scope": "Local current-code home/results initially; deployed Site version 7 for research workflows and remaining checks. Temporary tabs and viewport overrides were removed afterward.",
+  "widths": [320, 360, 390, 480, 640, 641, 650, 651, 767, 768, 960, 961, 1024, 1050, 1051, 1150, 1151, 1200, 1201, 1440, 1920],
+  "matrix": {
+    "views": ["home", "results", "overview", "history", "reports", "canadian-dictionary", "saved", "comparison", "paired-labels", "paired-reports", "sources"],
+    "geometryChecks": 231,
+    "pageOverflowObserved": 0,
+    "qualification": "This is a structural viewport matrix, not 231 independent full visual or end-to-end tests. Screenshots sampled representative mobile and desktop states. Data and open disclosures varied by view.",
+    "expectedScrollableRegion": "The product tab strip extends beyond its container at narrow mobile widths; page width remains bounded. Keyboard arrow navigation and Enter activation worked in comparison tabs."
+  },
+  "functionalChecks": [
+    {"scenario": "Mobile navigation at 390px", "result": "FAIL", "observation": "Choosing Sources changes main content but leaves sidebar dialog open until Escape."},
+    {"scenario": "US exact product detail and composition", "result": "PASS", "observation": "Selected Cardinal Health Sertraline Hydrochloride 50 mg, NDC 55154-4687; identity and strength visible."},
+    {"scenario": "History and archived comparison", "result": "PASS", "observation": "Nine versions displayed; versions 8 to 9 loaded an administrative metadata difference with original source links."},
+    {"scenario": "Reversed history selections", "result": "FAIL", "observation": "Earlier record accepts version 9 and Later record accepts version 8 without chronological validation."},
+    {"scenario": "Report source, reaction and seriousness state", "result": "FAIL", "observation": "Leaving Reported reactions for Label evidence and returning resets reaction, seriousness and source/dictionary selection."},
+    {"scenario": "FDA report expansion", "result": "PASS", "observation": "Expanded report 26940179 distinguished event country GB from reporter country CO and displayed its source link."},
+    {"scenario": "Canadian dictionary selection", "result": "PASS", "observation": "Selected APO-SERTRALINE CV 6036 through checkbox UI; loaded 25 of 40 reports."},
+    {"scenario": "Bookmark lifecycle", "result": "PASS", "observation": "Save, reload persistence, reopen/compare, and remove succeeded. Audit bookmark removed afterward."},
+    {"scenario": "Two-medication comparison", "result": "PASS", "observation": "Sertraline Hydrochloride 50 mg and Warfarin Sodium 7.5 mg showed composition, both labels, highlighted names and 3,274 source-matched candidate reports with caveats."},
+    {"scenario": "Report pagination", "result": "PASS", "observation": "Co-reported observations advanced from page 1 to page 2 with different case identifiers and Previous enabled."},
+    {"scenario": "Keyboard tabs and drawer dismissal", "result": "PASS", "observation": "ArrowRight moved focus to Co-reported observations; Enter activated it; Escape dismissed mobile sidebar."},
+    {"scenario": "Source directory", "result": "PASS", "observation": "Seven sources; WHO and EMA marked external; Canadian import dates and source coverage shown separately."},
+    {"scenario": "Landmarks", "result": "FAIL", "observation": "Two nested main landmarks; no skip link in rendered document."},
+    {"scenario": "Print scope", "result": "FAIL_BY_CODE_AND_DOM", "observation": "Only active tab mounted; 24 of 25 report details remained closed after opening one; print CSS hides all closed details. No rendered PDF verification performed."},
+    {"scenario": "Runtime console", "result": "PASS_IN_CAPTURED_WINDOW", "observation": "No warning or error entries returned by browser log capture for the live audit tab."}
+  ],
+  "limitations": ["No Safari or Firefox run", "No physical mobile device or touch hardware", "No full VoiceOver/NVDA session", "No browser zoom, forced-colors or reduced-motion certification", "No rendered print/PDF review", "No offline/network-throttled browser simulation", "No sustained load test"]
+}

@@ -1,0 +1,248 @@
+{
+  "base": "https://medcheck-research.massimochiarella.chatgpt.site",
+  "observedAt": "2026-09-22T04:27:19.854319+00:00",
+  "results": [
+    {
+      "case": "ca-long-ingredient-dictionary",
+      "params": {
+        "action": "reports",
+        "id": "CA:942",
+        "source": "CA"
+      },
+      "status": 503,
+      "bytes": 197,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": "The data service could not complete this request. Please try again shortly.",
+      "notes": [
+        "Unavailable data is not evidence of safety or an absence of reports."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": null,
+      "data": null,
+      "seconds": 1.934
+    },
+    {
+      "case": "ca-selected-dictionary",
+      "params": {
+        "action": "reports",
+        "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+        "source": "CA",
+        "cvIds": "[[\"6036\"]]"
+      },
+      "status": 200,
+      "bytes": 15480,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "Canada Vigilance contains suspected adverse reactions. Reports can be incomplete or duplicated; the latest follow-up is retained. Counts do not establish causation, incidence, or comparative safety. Contains information licensed under the Open Government Licence \u2013 Canada.",
+        "Counts include only Suspect, Concomitant, or Interacting medication roles. Known duplicate/linked case references are preserved; distinct report IDs may still describe one incident."
+      ],
+      "total": 40,
+      "hasMore": true,
+      "fetchedAt": "2026-09-08T01:01:30.219Z",
+      "rows": 25,
+      "sample": [
+        {
+          "id": "1076566",
+          "version": "0",
+          "eventCountry": "Canada"
+        },
+        {
+          "id": "1013161",
+          "version": "0",
+          "eventCountry": "Canada"
+        },
+        {
+          "id": "991540",
+          "version": "0",
+          "eventCountry": "Canada"
+        },
+        {
+          "id": "950037",
+          "version": "0",
+          "eventCountry": "Canada"
+        },
+        {
+          "id": "941897",
+          "version": "0",
+          "eventCountry": "Canada"
+        },
+        {
+          "id": "933913",
+          "version": "0",
+          "eventCountry": "Canada"
+        },
+        {
+          "id": "914675",
+          "version": "0",
+          "eventCountry": "Canada"
+        },
+        {
+          "id": "903023423",
+          "version": "0",
+          "eventCountry": "Canada"
+        }
+      ],
+      "seconds": 4.437
+    },
+    {
+      "case": "impossible-date",
+      "params": {
+        "action": "reports",
+        "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+        "source": "US",
+        "from": "2026-02-30"
+      },
+      "status": 400,
+      "bytes": 148,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": "Use a valid calendar date.",
+      "notes": [
+        "Unavailable data is not evidence of safety or an absence of reports."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": null,
+      "data": null,
+      "seconds": 1.03
+    },
+    {
+      "case": "reversed-date-range",
+      "params": {
+        "action": "reports",
+        "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+        "source": "US",
+        "from": "2026-09-01",
+        "to": "2026-01-01"
+      },
+      "status": 400,
+      "bytes": 155,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": "Start date must precede end date.",
+      "notes": [
+        "Unavailable data is not evidence of safety or an absence of reports."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": null,
+      "data": null,
+      "seconds": 0.607
+    },
+    {
+      "case": "malformed-dictionary-json",
+      "params": {
+        "action": "reports",
+        "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+        "source": "CA",
+        "cvIds": "not-json"
+      },
+      "status": 400,
+      "bytes": 174,
+      "contentType": "application/json",
+      "completeness": "unavailable",
+      "error": "Unexpected token 'o', \"not-json\" is not valid JSON",
+      "notes": [
+        "Unavailable data is not evidence of safety or an absence of reports."
+      ],
+      "total": null,
+      "hasMore": null,
+      "fetchedAt": null,
+      "data": null,
+      "seconds": 0.634
+    },
+    {
+      "case": "ca-no-matching-reports",
+      "params": {
+        "action": "reports",
+        "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+        "source": "CA",
+        "cvIds": "[[\"6036\"]]",
+        "reaction": "ZZQZXVBNM"
+      },
+      "status": 200,
+      "bytes": 687,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "Canada Vigilance contains suspected adverse reactions. Reports can be incomplete or duplicated; the latest follow-up is retained. Counts do not establish causation, incidence, or comparative safety. Contains information licensed under the Open Government Licence \u2013 Canada.",
+        "Counts include only Suspect, Concomitant, or Interacting medication roles. Known duplicate/linked case references are preserved; distinct report IDs may still describe one incident."
+      ],
+      "total": 0,
+      "hasMore": false,
+      "fetchedAt": "2026-09-08T01:01:30.219Z",
+      "rows": 0,
+      "sample": [],
+      "seconds": 5.098
+    },
+    {
+      "case": "warm-us-reports",
+      "params": {
+        "action": "reports",
+        "id": "US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687",
+        "source": "US"
+      },
+      "status": 200,
+      "bytes": 29615,
+      "contentType": "application/json",
+      "completeness": "partial",
+      "error": null,
+      "notes": [
+        "These are reports of suspected events, not proof that a medication caused a reaction. Counts cannot tell you how likely a reaction is or which medication is safer. A report can mention several medicines and reactions.",
+        "Counts refer to source-matched reports, not verified exposures to the selected product or formulation. Reporter country does not establish the market of the medication."
+      ],
+      "total": 218296,
+      "hasMore": true,
+      "fetchedAt": "2026-09-22T04:27:19.673Z",
+      "rows": 25,
+      "sample": [
+        {
+          "id": "26940179",
+          "version": "1",
+          "eventCountry": "GB"
+        },
+        {
+          "id": "26940361",
+          "version": "1",
+          "eventCountry": "US"
+        },
+        {
+          "id": "26940748",
+          "version": "1",
+          "eventCountry": "GB"
+        },
+        {
+          "id": "26941037",
+          "version": "1",
+          "eventCountry": "US"
+        },
+        {
+          "id": "26941349",
+          "version": "1",
+          "eventCountry": "EU"
+        },
+        {
+          "id": "26941423",
+          "version": "1",
+          "eventCountry": "AU"
+        },
+        {
+          "id": "26941424",
+          "version": "1",
+          "eventCountry": "AU"
+        },
+        {
+          "id": "26941638",
+          "version": "1",
+          "eventCountry": "GB"
+        }
+      ],
+      "seconds": 2.144
+    }
+  ]
+}

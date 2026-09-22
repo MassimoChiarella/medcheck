@@ -1,0 +1,9 @@
+{"test":"duplicate fixed-combination rows satisfy two-medicine pair","matched":true}
+{"test":"exact NDC search returns other strengths","query":"55154-4687","products":[{"ndc":"55154-4687","strength":"50 mg"},{"ndc":"55154-4692","strength":"100 mg"}],"completeness":"complete"}
+{"test":"stale Canadian product search","completeness":"complete","notes":[],"productStatus":"stale","fetchedAt":"2026-09-22T04:20:53.958Z"}
+{"test":"stale archive status","completeness":"complete","notes":[]}
+{"test":"historical product removed from current SPL","savedId":"US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687","error":"This product is absent from the current label."}
+{"test":"Canadian report page query count","rows":25,"d1Calls":81,"reportHydrationCalls":75}
+{"test":"FDA report query raw-name coverage","includesReportedMedicinalProduct":false,"search":"(patient.drug.openfda.generic_name.exact:\"SERTRALINE HYDROCHLORIDE\" OR patient.drug.openfda.brand_name.exact:\"SERTRALINE HYDROCHLORIDE\" OR patient.drug.openfda.generic_name.exact:\"SERTRALINE\" OR patient.drug.openfda.brand_name.exact:\"SERTRALINE\")"}
+{"test":"FDA source duplicate reference preserved","duplicateLinks":[]}
+{"test":"pair evidence one source unavailable","firstProductAvailable":true,"error":"Source temporarily unavailable (HTTP 503)."}
