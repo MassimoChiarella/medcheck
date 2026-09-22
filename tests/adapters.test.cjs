@@ -160,3 +160,8 @@ test('veterinary-only matches cannot become a human medication spelling suggesti
   const h=harness(sql=>sql.startsWith('INSERT INTO source_budget')?{count:1}:null,async url=>url.hostname==='rxnav.nlm.nih.gov'?new Response(JSON.stringify({suggestionGroup:{suggestionList:{suggestion:['sertraline']}}})):url.pathname.endsWith('.xml')?new Response(fixture.replaceAll('HUMAN','VETERINARY')):new Response(JSON.stringify({data:[{setid:'7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6'}],metadata:{total_pages:1}})));
   assert.equal((await h.load('server').suggestMedication('sertraine','US')).data,null);
 });
+
+test('legacy parsed labels cannot mask package NDC metadata after upgrade',async()=>{
+  let fetched=0;const h=harness((sql,args)=>sql==='SELECT value,fetched FROM cache WHERE key=?'&&args[0]==='spl:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:current'?{value:JSON.stringify({products:[]}),fetched:Date.now()}:sql.startsWith('INSERT INTO source_budget')?{count:1}:null,async()=>{fetched++;return new Response(fixture);});
+  const label=await h.load('server').loadLabel('7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6');assert.equal(fetched,1);assert.ok(label.value.products[0].identifiers.packageNdcs.length);
+});

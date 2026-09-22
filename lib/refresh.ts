@@ -1,5 +1,5 @@
 import { currentFence } from './database';
-import { db, loadLabel, now, UpstreamError } from './server';
+import { db, loadLabel, splCacheKey, now, UpstreamError } from './server';
 import { CHECK_LEASE_MS, UpdateConflict, type UpdateRun } from './updates';
 
 type Cycle = { cycle: string; owner: string; started: string };
@@ -47,7 +47,7 @@ export async function refreshAction(b: Record<string, unknown>): Promise<Respons
     .bind(Date.now() + 120_000, cycle.cycle, Date.now(), cycle.cycle, Date.now()).first<{setId:string;attempts:number}>();
   if (!item) return Response.json(await progress(cycle.cycle));
   try {
-    const previous = await db().prepare('SELECT value FROM cache WHERE key=?').bind(`spl:${item.setId}:current`).first<{value:string}>();
+    const previous = await db().prepare('SELECT value FROM cache WHERE key=?').bind(splCacheKey(item.setId)).first<{value:string}>();
     const oldHash = JSON.parse(previous?.value || '{}').versions?.[0]?.contentHash;
     const label = await loadLabel(item.setId, undefined, true);
     const changed = oldHash !== label.value.versions[0]?.contentHash ? 1 : 0;
