@@ -7,7 +7,7 @@ function harness(handler=()=>null,fetcher=async()=>new Response('{}'),overrides=
   database.batch=async items=>Promise.all(items.map(x=>x.run()));
   function load(file){file=file.replace(/\.ts$/,'');if(modules[file])return modules[file];const exports={};modules[file]=exports;
     const code=ts.transpileModule(fs.readFileSync(`lib/${file}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-    const req=id=>id==='./database'&&!overrides.realStorage?{database:()=>database,LeaseConflict:class extends Error{}}:id==='cloudflare:workers'?{env:{...overrides.environment,DB:overrides.database||database,FILES:overrides.files}}:id==='./storage'&&!overrides.realStorage?{putArchive:overrides.putArchive||(async()=>{}),writeCapacity:async()=>{},reserveDatabase:async()=>()=>{},cacheWrite:async()=>{}}:id==='./updates'&&!overrides.realStorage?{checkStatus:()=>({})}:id.startsWith('./')?load(id.slice(2)):require(id);
+    const req=id=>id==='./database'&&!overrides.realStorage?{database:()=>database,LeaseConflict:class extends Error{}}:id==='cloudflare:workers'?{env:{...overrides.environment,DB:overrides.database||database,FILES:overrides.files}}:id==='./storage'&&!overrides.realStorage?{putArchive:overrides.putArchive||(async()=>{}),writeCapacity:async()=>{},reserveDatabase:async()=>()=>{},cacheWrite:async()=>{}}:id==='./updates'&&!overrides.realStorage?{checkStatus:()=>({})}:id.startsWith('@/lib/')?load(id.slice(6)):id.startsWith('./')?load(id.slice(2)):require(id);
     vm.runInNewContext(code,{exports,require:req,crypto:crypto.webcrypto,fetch:fetcher,Date,URL,TextEncoder,TextDecoder,Response,AbortSignal,Uint8Array,Buffer,setTimeout:f=>setTimeout(f,0)},{filename:file+'.ts'});return exports;
   }
   return {load,calls};
@@ -142,4 +142,21 @@ test('maintenance reconciliation cannot remove reservations committed after its 
   const scan=fencing.withFence(owner,()=>fencing.reconcileDatabaseReservations());await started.promise;
   f.sqlite.exec("INSERT INTO database_reservations(id,bytes,created) VALUES('newer',20000,'2026-01-01')");release.resolve();await scan;
   assert.deepEqual(f.sqlite.prepare('SELECT id FROM database_reservations ORDER BY id').all().map(x=>x.id),['newer']);f.sqlite.close();
+});
+
+test('API rejects invalid enums, dates, ordering and dictionary JSON before source work',async()=>{
+  let requests=0;const h=harness(()=>null,async()=>{requests++;throw new Error('Unexpected network');}),route=h.load('../app/api/research/route');
+  const id='US:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:55154-4687';
+  const cases=[{action:'search',q:'sertraline',market:'GB'},{action:'unknown'},{action:'search',q:'sertraline',page:'1.5'},{action:'reports',id,source:'EU'},{action:'reports',id,serious:'maybe'},{action:'reports',id,from:'2026-02-30'},{action:'reports',id,from:'2026-09-22',to:'2026-01-01'},{action:'reports',id,cvIds:'['},{action:'reports',id,cvIds:'[["1","01"]]'},{action:'version',id,version:'oops'},{action:'diff',id,before:'10',after:'2'},{action:'diff',id,before:'8',after:'8'}];
+  for(const params of cases){const response=await route.GET(new Request('https://test/api/research?'+new URLSearchParams(params)));const body=await response.json();assert.equal(response.status,400,JSON.stringify(params));assert.equal(body.code,'INVALID_INPUT');assert.doesNotMatch(body.error,/JSON|SyntaxError/);}
+  assert.equal(requests,0);assert.equal(h.calls.length,0);
+});
+test('exact product and package NDC searches do not expand to other strengths',async()=>{
+  const h=harness(sql=>sql.startsWith('INSERT INTO source_budget')?{count:1}:null,async url=>url.pathname.endsWith('.xml')?new Response(fixture):new Response(JSON.stringify({data:[{setid:'7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6'}],metadata:{total_pages:1}})));
+  for(const query of ['55154-4687','55154-4687-0','5515446870']){const result=await h.load('server').searchUS(query,1);assert.equal(result.data.length,1);assert.equal(result.data[0].identifiers.ndc,'55154-4687');}
+  assert.equal((await h.load('server').searchUS('55154-4687-9',1)).data.length,0);
+});
+test('veterinary-only matches cannot become a human medication spelling suggestion',async()=>{
+  const h=harness(sql=>sql.startsWith('INSERT INTO source_budget')?{count:1}:null,async url=>url.hostname==='rxnav.nlm.nih.gov'?new Response(JSON.stringify({suggestionGroup:{suggestionList:{suggestion:['sertraline']}}})):url.pathname.endsWith('.xml')?new Response(fixture.replaceAll('HUMAN','VETERINARY')):new Response(JSON.stringify({data:[{setid:'7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6'}],metadata:{total_pages:1}})));
+  assert.equal((await h.load('server').suggestMedication('sertraine','US')).data,null);
 });

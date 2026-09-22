@@ -26,3 +26,7 @@ void test('suggestions are only offered for complete empty first-page name searc
   assert.equal(shouldOfferSpelling('sertaline', { ...empty, page: 2 }), false);
   assert.equal(shouldOfferSpelling('02238280', empty), false);
 });
+
+void test('a filtered page with more upstream results does not offer a correction',()=>{
+  assert.equal(shouldOfferSpelling('sertraine',{data:[],completeness:'complete',notes:[],fetchedAt:'2026-01-01',page:1,hasMore:true}),false);
+});

@@ -11,7 +11,8 @@ This ledger distinguishes implemented fixes from verified release checks. The de
 | Archive publication and reservations | A11/A12 | Implemented; local regression verified | Immutable bytes, operation-owned acknowledgements, atomic scan checkpoints, bounded legacy-reference repair |
 | Database growth and cache policy | A13 | Implemented; local regression verified | Atomic capacity reservations include concurrent interactive/import writes; bounded cache retention protects history |
 | Full capacity qualification | A14 | Pending external qualification | Actual free Sites allocation and an isolated full-data target are not established; no limit was relaxed |
-| Search and evidence correctness | A03–A10 | Not started | — |
+| Exact product search and input contracts | A03/A05/X04/X05 | Implemented; local regression verified | Product/package NDC filtering, validation before source access, human-product suggestions |
+| Canadian names and evidence correctness | A04/A06–A10 | In progress | — |
 | Query batching and bounded reuse | A24 | Not started | — |
 | Research state and bookmarks | A15/A19/A20/A22 | Not started | — |
 | Navigation, accessibility and printing | A16/A17/A21/A23 | Not started | — |
@@ -57,3 +58,11 @@ Validation: typecheck/lint, normal unit/adapter tests, and disposable Worker int
 A14 remains a release gate: local SQLite/Worker checks do not establish hosted free entitlement or full-generation peak size. D1 documents `size_after` per query, but the deployed provider must be checked for useful per-statement values in a batch before relying on measured reservation consumption for capacity forecasts. If it reports a common final size, growth credit remains zero and admission stays conservative. The three complete hosted generation cycles, actual allocation, query/CPU budgets, and interrupted-cycle/rollback measurements are still required. Ordinary Cloudflare Free's documented per-database allowance is not sufficient for the previously measured complete Canadian index. No paid upgrade, dataset truncation, or relaxed admission estimate was used.
 
 References checked during implementation: [D1 result metadata](https://developers.cloudflare.com/d1/worker-api/return-object/), [D1 limits](https://developers.cloudflare.com/d1/platform/limits/).
+
+## Milestone 5 — Exact search and API inputs
+
+DailyMed searches now retain the requested product or package NDC after expanding a multi-product SPL. Identifier comparison preserves leading zeros and does not invent padding conversions. Package codes belong to the selected structured product. All research routes validate market/source, action, identifiers, versions, chronological order, calendar dates, pagination and Canadian dictionary selections before database or upstream work. Invalid input returns a stable typed 400 response; internal failures are redacted instead of classified by message fragments.
+
+Spelling suggestions require a verified human product in the selected market. An empty page with more source pages offers continued browsing rather than a misleading spelling suggestion.
+
+Validation: typecheck/lint, 44 Node tests and 17 Python tests. New fixtures cover product/package NDCs, other strengths within the same SPL, veterinary suggestions and invalid route inputs with zero database/network access. Browser verification remains in the combined release gate.

@@ -4,7 +4,7 @@ export type Ingredient = { name: string; code?: string; strength?: string; basis
 export type Product = {
   id: string; name: string; genericName: string; market: Market;
   manufacturer: string; strength: string; form: string; route: string;
-  identifiers: { ndc?: string; din?: string; setid?: string; drugCode?: number; rxcui?: string };
+  identifiers: { ndc?: string; packageNdcs?: string[]; din?: string; setid?: string; drugCode?: number; rxcui?: string };
   persistence?: 'archived' | 'unavailable';
   currentPresence?: 'present' | 'absent' | 'unknown';
   ingredients: Ingredient[]; sourceUrl: string; status?: string; dataStatus?: Completeness; observedAt?: string;

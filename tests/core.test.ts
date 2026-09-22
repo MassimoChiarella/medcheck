@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { compareVersions, distinctPairMatches, latestCases, parseSPL, reportAliases, unzipLabel } from '../lib/core.ts';
+import { compareVersions, distinctPairMatches, latestCases, matchesNdc, parseSPL, reportAliases, unzipLabel } from '../lib/core.ts';
 import type { ReportSummary } from '../lib/types.ts';
 
 const xml=readFileSync(new URL('./fixtures/sertraline-v8.xml',import.meta.url),'utf8');
@@ -70,4 +70,11 @@ void test('version chronology uses numeric SPL versions and observation dates',a
   assert.throws(()=>compareVersions({...base,version:'10'},{...base,version:'2'}),/earlier/);
   const ca={...base,productId:'CA:123',version:'2026-09-01T00:00:00Z',observedAt:'2026-09-01T00:00:00Z'};
   assert.ok(versionOrder(ca,{...ca,version:'2026-09-02T00:00:00Z',observedAt:'2026-09-02T00:00:00Z'})<0);
+});
+
+void test('NDC relationships preserve exact package identity and leading zeros',()=>{
+  const p=parsed.products[0];assert.deepEqual(p.identifiers.packageNdcs,['55154-4687-0']);
+  assert.equal(matchesNdc(p,'55154-4687-0'),true);assert.equal(matchesNdc(parsed.products[1],'55154-4687-0'),false);
+  const padded={...p,identifiers:{ndc:'00001-0001',packageNdcs:['00001-0001-01']}};
+  assert.equal(matchesNdc(padded,'00001000101'),true);assert.equal(matchesNdc(padded,'1000101'),false);
 });

@@ -1,7 +1,7 @@
 /* oxlint-disable typescript/no-explicit-any -- Official sources have heterogeneous records; mappings explicitly normalize the fields used. */
 import { versionOrder } from './history-order';
 import { env } from 'cloudflare:workers';
-import { arr, normalize, parseSPL, sourceDate, unzipLabel } from './core';
+import { arr, normalize, isNdcQuery, matchesNdc, parseSPL, sourceDate, unzipLabel } from './core';
 import type { Product, ProductVersion, Result, SourceStatus } from './types';
 import { sources } from './sources';
 import { checkStatus, type UpdateRun } from './updates';
@@ -88,11 +88,11 @@ export async function loadLabel(setid:string,version?:string,force=false){
 
 export async function searchUS(query:string,page:number):Promise<Result<Product[]>>{
   const params:Record<string,string|number>={pagesize:6,page};
-  if(/^[\d-]{8,14}$/.test(query))params.ndc=query;else params.drug_name=query;
+  if(isNdcQuery(query))params.ndc=query;else params.drug_name=query;
   const listing=await jsonSource('dailymed','https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json',params);
   const entries=arr<Record<string,string>>(listing.value.data);const output:Product[]=[];const notes:string[]=[];
   // ponytail: three concurrent labels per batch; avoid a separate job queue for interactive lookup.
-  for(let i=0;i<entries.length;i+=3){const settled=await Promise.allSettled(entries.slice(i,i+3).map(e=>loadLabel(e.setid)));settled.forEach((r,j)=>{if(r.status==='fulfilled'){for(const p of r.value.value.products)output.push(p);if(r.value.stale)notes.push('A saved label is shown because the latest source request failed.');}else notes.push(`One matching label could not be loaded: ${entries[i+j].title||'label'}.`);});}
+  for(let i=0;i<entries.length;i+=3){const settled=await Promise.allSettled(entries.slice(i,i+3).map(e=>loadLabel(e.setid)));settled.forEach((r,j)=>{if(r.status==='fulfilled'){for(const p of r.value.value.products)if(!isNdcQuery(query)||matchesNdc(p,query))output.push(p);if(r.value.stale)notes.push('A saved label is shown because the latest source request failed.');}else notes.push(`One matching label could not be loaded: ${entries[i+j].title||'label'}.`);});}
   if(listing.stale)notes.push('Search results are from a previous successful source request.');
   return {...result(output,notes,notes.length?'partial':'complete'),fetchedAt:listing.fetched,page,hasMore:Number(listing.value.metadata?.total_pages)>page};
 }
@@ -105,9 +105,9 @@ export async function suggestMedication(query:string,market:'US'|'CA'):Promise<R
   for(const name of candidates){
     // Check the selected market before offering a spelling; never switch countries automatically.
     if(market==='US'){
-      const listing=await jsonSource('dailymed','https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json',{pagesize:6,page:1,drug_name:name});
-      if(listing.stale)throw new Error('Spelling suggestions could not be verified.');
-      if(arr(listing.value.data).length)return {...result(name),fetchedAt:terms.fetched};
+      const verified=await searchUS(name,1);
+      if(verified.completeness!=='complete')throw new Error('Spelling suggestions could not be verified.');
+      if(verified.data.some(p=>p.dataStatus!=='stale'))return {...result(name),fetchedAt:terms.fetched};
     }else{
       const indexed=await db().prepare("SELECT id FROM products WHERE id LIKE 'CA:%' AND (json_extract(data,'$.name') LIKE ? OR json_extract(data,'$.genericName') LIKE ?) LIMIT 1").bind('%'+name+'%','%'+name+'%').first();
       if(indexed)return {...result(name),fetchedAt:terms.fetched};
@@ -116,7 +116,7 @@ export async function suggestMedication(query:string,market:'US'|'CA'):Promise<R
       if(arr<any>(brands.value).some(p=>p.class_name==='Human'))return {...result(name),fetchedAt:terms.fetched};
       const ingredients=await caEndpoint('activeingredient',{ingredientname:name});
       if(ingredients.stale)throw new Error('Spelling suggestions could not be verified.');
-      if(arr(ingredients.value).length)return {...result(name),fetchedAt:terms.fetched};
+      for(const candidate of arr<any>(ingredients.value).slice(0,6)){const product=await caEndpoint('drugproduct',{id:Number(candidate.drug_code)});if(!product.stale&&arr<any>(product.value).some(p=>p.class_name==='Human'))return {...result(name),fetchedAt:terms.fetched};}
     }
   }
   return {...result(null),fetchedAt:terms.fetched};

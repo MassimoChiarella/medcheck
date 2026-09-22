@@ -1,4 +1,5 @@
 /* oxlint-disable typescript/no-explicit-any -- Official sources have heterogeneous records; mappings explicitly normalize the fields used. */
+import { InputError } from './research-input';
 import type { EvidenceItem, Product, ReportResult, ReportSummary } from './types';
 import { arr, distinctPairMatches, latestCases, normalize, reportAliases, sourceDate } from './core';
 import { aliases, currentVersion, db, jsonSource, now, result, UpstreamError } from './server';
@@ -21,7 +22,7 @@ export async function evidence(products:Product[]){
 }
 function quote(s:string){return '"'+s.replace(/["\\]/g,' ').trim()+'"';}
 export type ReportFilters={source:'US'|'CA';from?:string;to?:string;reaction?:string;serious?:string;page:number;cvIds?:string[][]};
-function iso(s?:string){if(!s)return undefined;if(!/^\d{4}-\d{2}-\d{2}$/.test(s)||Number.isNaN(Date.parse(s))||new Date(s).toISOString().slice(0,10)!==s)throw new Error('Use a valid calendar date.');return s.replaceAll('-','');}
+function iso(s?:string){if(!s)return undefined;if(!/^\d{4}-\d{2}-\d{2}$/.test(s)||Number.isNaN(Date.parse(s))||new Date(s).toISOString().slice(0,10)!==s)throw new InputError('Use a valid calendar date.');return s.replaceAll('-','');}
 const outcomeNames:Record<string,string>={'1':'Recovered','2':'Recovering','3':'Not recovered','4':'Recovered with sequelae','5':'Fatal outcome reported','6':'Unknown outcome'};
 function fdaReport(r:any):ReportSummary{
   return{id:String(r.safetyreportid),version:String(r.safetyreportversion||'1'),authority:'FDA',eventCountry:r.occurcountry||undefined,reporterCountry:r.primarysource?.reportercountry||undefined,receivedAt:sourceDate(r.receivedate),updatedAt:sourceDate(r.receiptdate),serious:r.serious==='1'?true:r.serious==='2'?false:null,drugs:arr<any>(r.patient?.drug).map(d=>({name:String(d.medicinalproduct||d.openfda?.brand_name?.[0]||'Unspecified medicine'),role:({'1':'Suspect','2':'Concomitant','3':'Interacting'} as Record<string,string>)[d.drugcharacterization]||'Not stated',ingredients:arr<string>(d.openfda?.generic_name)})),reactions:[...new Set(arr<any>(r.patient?.reaction).map(x=>String(x.reactionmeddrapt||'Unspecified')))],outcomes:[...new Set(arr<any>(r.patient?.reaction).map(x=>outcomeNames[x.reactionoutcome]).filter(Boolean))],duplicateLinks:[],sourceUrl:'https://api.fda.gov/drug/event.json?search=safetyreportid:'+quote(String(r.safetyreportid))};
@@ -35,7 +36,7 @@ export async function usReports(products:Product[],filters:ReportFilters):Promis
   if(filters.reaction)queries.push(`patient.reaction.reactionmeddrapt.exact:${quote(filters.reaction)}`);
   if(filters.serious==='yes')queries.push('serious:1');if(filters.serious==='no')queries.push('serious:2');
   const search=queries.join(' AND '),skip=(filters.page-1)*25;
-  if(skip>25000)throw new Error('The source paging limit was reached. Narrow the date range.');
+  if(skip>25000)throw new InputError('The source paging limit was reached. Narrow the date range.');
   try{
     const r=await jsonSource('openfda','https://api.fda.gov/drug/event.json',{search,limit:25,skip,sort:'receivedate:desc'});
     let data=latestCases(arr<any>(r.value.results).map(fdaReport));const notes=[reportCaveat,'Counts refer to source-matched reports, not verified exposures to the selected product or formulation. Reporter country does not establish the market of the medication.'];
@@ -53,7 +54,7 @@ export async function caReports(products:Product[],filters:ReportFilters):Promis
   const gen=state.generation;const candidates:NonNullable<ReportResult['candidates']>=[];const selected:string[][]=[];let candidateHasMore=false;
   for(let side=0;side<products.length;side++){
     const p=products[side];const chosen=filters.cvIds?.[side]||[];
-    if(chosen.length){if(chosen.length>10||chosen.some(x=>!/^\d{1,10}$/.test(x)))throw new Error('Choose up to ten valid Canadian report-dictionary entries.');const check=await db().prepare(`SELECT id FROM cv_products WHERE gen=? AND id IN (${chosen.map(()=>'?').join(',')})`).bind(gen,...chosen.map(Number)).all();if(check.results.length!==chosen.length)throw new Error('A selected report-dictionary entry is no longer available.');selected.push(chosen);continue;}
+    if(chosen.length){if(chosen.length>10||chosen.some(x=>!/^\d{1,10}$/.test(x)))throw new InputError('Choose up to ten valid Canadian report-dictionary entries.');const check=await db().prepare(`SELECT id FROM cv_products WHERE gen=? AND id IN (${chosen.map(()=>'?').join(',')})`).bind(gen,...chosen.map(Number)).all();if(check.results.length!==chosen.length)throw new InputError('A selected report-dictionary entry is no longer available.');selected.push(chosen);continue;}
     const names=[...new Set([p.name,p.genericName,...p.ingredients.flatMap(i=>[i.name,i.basis||''])].map(normalize).filter(Boolean))];
     const rows=await db().prepare(`SELECT id,name,ingredients FROM cv_products WHERE gen=? AND (${names.slice(0,6).map(()=>'(name LIKE ? OR ingredients LIKE ?)').join(' OR ')}) ORDER BY name,id LIMIT 31 OFFSET ?`).bind(gen,...names.slice(0,6).flatMap(n=>{const term='%'+n.replace(/[%_]/g,'')+'%';return [term,term];}),(filters.page-1)*30).all<{id:number;name:string;ingredients:string}>();
     candidateHasMore ||= rows.results.length>30;
@@ -61,9 +62,9 @@ export async function caReports(products:Product[],filters:ReportFilters):Promis
     selected.push([]);
   }
   if(selected.some(s=>!s.length))return {...result<ReportSummary[]>([],['Select the corresponding entries in the Canada Vigilance drug dictionary. A report-dictionary name does not establish an exact DPD product, manufacturer, or formulation match.',canadaCaveat],'partial'),counts:[],countLabel:'Choose report dictionary matches',candidates,selectedCvIds:selected,sourceAsOf:state.coverage,page:filters.page,hasMore:candidateHasMore};
-  if(selected.length===2&&selected[0].some(x=>selected[1].includes(x)))throw new Error('The same report-dictionary entry cannot satisfy both medications.');
+  if(selected.length===2&&selected[0].some(x=>selected[1].includes(x)))throw new InputError('The same report-dictionary entry cannot satisfy both medications.');
   const ingredientRows=await db().prepare(`SELECT id,ingredients FROM cv_products WHERE gen=? AND id IN (${selected.flat().map(()=>'?').join(',')})`).bind(gen,...selected.flat().map(Number)).all<{id:number;ingredients:string}>();
-  if(selected.length===2){const groups=selected.map(ids=>new Set(ingredientRows.results.filter(r=>ids.includes(String(r.id))).flatMap(r=>JSON.parse(r.ingredients) as string[]).map(normalize)));if([...groups[0]].some(i=>groups[1].has(i)))throw new Error('These report-dictionary selections share an ingredient; co-report comparison is ambiguous.');}
+  if(selected.length===2){const groups=selected.map(ids=>new Set(ingredientRows.results.filter(r=>ids.includes(String(r.id))).flatMap(r=>JSON.parse(r.ingredients) as string[]).map(normalize)));if([...groups[0]].some(i=>groups[1].has(i)))throw new InputError('These report-dictionary selections share an ingredient; co-report comparison is ambiguous.');}
   const values:(string|number)[]=[gen];const where=['r.gen=?'];
   for(const ids of selected){where.push(`r.id IN(SELECT d.reportId FROM cv_report_drugs d WHERE d.gen=? AND d.drugId IN (${ids.map(()=>'?').join(',')}) AND d.role IN ('Suspect','Concomitant','Interacting'))`);values.push(gen,...ids.map(Number));}
   if(filters.from){iso(filters.from);where.push('r.received>=?');values.push(filters.from);}if(filters.to){iso(filters.to);where.push('r.received<=?');values.push(filters.to);}

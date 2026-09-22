@@ -9,7 +9,7 @@ export function isMedicationNameQuery(query: string): boolean {
 
 export function shouldOfferSpelling(query: string, result: Result<unknown[]>): boolean {
   return isMedicationNameQuery(query) && result.completeness === 'complete'
-    && (result.page ?? 1) === 1 && result.data.length === 0;
+    && !result.hasMore && (result.page ?? 1) === 1 && result.data.length === 0;
 }
 
 // Adjacent swapped letters count as one typo, alongside insertions/deletions/substitutions.

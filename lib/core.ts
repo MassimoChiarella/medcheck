@@ -1,3 +1,4 @@
+import { InputError } from './research-input.ts';
 import { versionOrder } from './history-order.ts';
 import { XMLParser } from 'fast-xml-parser';
 import { unzipSync, strFromU8 } from 'fflate';
@@ -51,16 +52,21 @@ export function parseSPL(xml:string, expectedSetid?:string):ParsedSPL {
     const form=child(p,'formCode')?.attrs.displayName||'';
     const id=`US:${setid}:${ndc}`;const sourceUrl=`https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${setid}`;
     const genericName=text(child(child(p,'asEntityWithGeneric'),'genericMedicine'))||active.map(i=>i.name).join(' / ');
-    const prod:Product={id,name:text(child(p,'name'))||genericName,genericName,market:'US',manufacturer,strength:active.map(i=>i.strength||'Not listed').join(' / '),form,route,identifiers:{ndc,setid},ingredients:active,sourceUrl};products.push(prod);
+    const prod:Product={id,name:text(child(p,'name'))||genericName,genericName,market:'US',manufacturer,strength:active.map(i=>i.strength||'Not listed').join(' / '),form,route,identifiers:{ndc,setid,packageNdcs:[...new Set(descendants(p,'containerPackagedProduct').map(n=>child(n,'code')?.attrs.code).filter((code):code is string=>!!code))]},ingredients:active,sourceUrl};products.push(prod);
     versions.push({id:`${id}@${version}`,productId:id,version,effectiveAt,sourceUrl:`https://dailymed.nlm.nih.gov/dailymed/getFile.cfm?type=zip&setid=${setid}&version=${version}`,active:active.length?active:undefined,inactive:inactive.length?inactive:undefined,form,route,sections,completeness:active.length?'complete':'partial',notes:inactive.length?[]:['Inactive ingredients were not available in a structured section.']});
   }
   return {products,versions,version,effectiveAt,sections};
 }
+export const isNdcQuery=(query:string)=>/^[\d-]{8,14}$/.test(query);
+export function matchesNdc(product:Product,query:string){
+  const codes=[product.identifiers.ndc,...product.identifiers.packageNdcs||[]].filter((v):v is string=>!!v);
+  return codes.some(code=>query.includes('-')?code===query:code.replaceAll('-','')===query);
+}
 const ingredientText=(v:Ingredient[])=>[...v].sort((a,b)=>normalize(a.name).localeCompare(normalize(b.name))).map(i=>`${i.name}${i.code?' [UNII '+i.code+']':''}${i.basisCode?' [basis UNII '+i.basisCode+']':''}${i.strength?' · '+i.strength+(i.basis?' (as '+i.basis+')':''):''}`).join('\n');
 export function compareVersions(before:ProductVersion,after:ProductVersion):{changes:Change[];notes:string[]}{
-  if(before.productId!==after.productId)throw new Error('Version comparisons require the same exact product.');
-  if(!Number.isFinite(versionOrder(before,after)))throw new Error('Version ordering is unavailable; read the source documents individually.');
-  if(versionOrder(before,after)>0)throw new Error('Choose the earlier record before the later record.');
+  if(before.productId!==after.productId)throw new InputError('Version comparisons require the same exact product.');
+  if(!Number.isFinite(versionOrder(before,after)))throw new InputError('Version ordering is unavailable; read the source documents individually.');
+  if(versionOrder(before,after)>0)throw new InputError('Choose the earlier record before the later record.');
   const changes:Change[]=[],notes:string[]=[];
   if(before.completeness==='unavailable'||after.completeness==='unavailable')return {changes,notes:['One selected product archive is unavailable; differences cannot be established.']};
   for(const [key,category]of[['active','active ingredients'],['inactive','inactive ingredients']] as const){
