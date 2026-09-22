@@ -1,5 +1,7 @@
 # Reliable source updates
 
+The [audit remediation plan](docs/REMEDIATION_PLAN.md) now defines follow-up work, including stronger import ownership, archive recovery and capacity qualification. The checked items below record the earlier implementation; they do not mean the later audit findings are resolved.
+
 Execution order follows the dependencies below. Each completed phase is committed and pushed independently; acceptance evidence is recorded here and in `VALIDATION.md`. Daily hosted execution remains gated until public launch. All installations retain their own credentials and data.
 
 ## 0. Baseline and delivery plan

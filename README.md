@@ -2,6 +2,8 @@
 
 Browse the [development history](HISTORY.md) for the feature-by-feature commit map. Publishing this repository does not make the review deployment public.
 
+The [September 2026 platform audit](audit/2026-09-22/README.md) identified outstanding correctness, resilience and usability work. The [remediation technical specification](docs/REMEDIATION_SPEC.md) and [phased development plan](docs/REMEDIATION_PLAN.md) capture all findings, acceptance tests and release gates. These documents describe planned work, not completed fixes.
+
 Medication history and evidence research for patients and caregivers. English, human prescription and OTC products, US and Canadian markets. No accounts, AI service, personal health histories, or patient notifications. Bookmarks are stored in the browser only.
 
 ## Run locally
