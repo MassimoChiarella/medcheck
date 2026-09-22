@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { db, hash, now } from './server';
-import { assertLease } from './database';
+import { assertLease, currentFence, databaseLimit } from './database';
 import { CHECK_LEASE_MS, noMaintenance } from './updates';
 
 export function estimatedImportBytes(source: 'cv' | 'dpd', bytes: number) {
@@ -9,14 +9,14 @@ export function estimatedImportBytes(source: 'cv' | 'dpd', bytes: number) {
   return Math.max(20_000_000, Math.ceil(bytes * (source === 'cv' ? 3 : 4)));
 }
 export async function capacity() {
-  const limitBytes = Number(env.IMPORT_DATABASE_LIMIT_BYTES || '8000000000');
-  if (!Number.isSafeInteger(limitBytes) || limitBytes < 50_000_000 || limitBytes > 8_000_000_000) throw new Error('IMPORT_DATABASE_LIMIT_BYTES must be between 50000000 and 8000000000.');
-  const result = await db().prepare("SELECT COALESCE(SUM(reservedBytes),0) AS reserved FROM imports WHERE state='staging'").all<{reserved:number}>();
-  const databaseBytes = result.meta.size_after, reservedBytes = result.results[0].reserved;
+  const limitBytes = databaseLimit();
+  const result = await db().prepare("SELECT (SELECT COALESCE(SUM(reservedBytes),0) FROM imports WHERE state='staging')+(SELECT COALESCE(SUM(bytes),0) FROM database_reservations) AS reserved,COALESCE((SELECT bytes FROM storage_usage WHERE id='d1'),0) AS accounted").all<{reserved:number;accounted:number}>();
+  const databaseBytes = Math.max(result.meta.size_after,result.results[0].accounted), reservedBytes = result.results[0].reserved;
   if (!Number.isSafeInteger(databaseBytes)) throw new Error('Database size could not be measured; import admission is unavailable.');
   return { databaseBytes, reservedBytes, limitBytes, availableBytes: Math.max(0, limitBytes - databaseBytes - reservedBytes) };
 }
 export async function writeCapacity(growthBytes = 12_000_000) {
+  const fence=currentFence();if(fence)fence.growthBytes=growthBytes;
   const value = await capacity();
   if (value.databaseBytes + growthBytes > value.limitBytes) throw new Error('Database capacity limit reached. Previous complete data remains available; no storage upgrade was made.');
   return value;

@@ -4,7 +4,7 @@ import { db, hash, now } from '@/lib/server';
 import { checkAction, UpdateConflict, noMaintenance } from '@/lib/updates';
 import { refreshAction } from '@/lib/refresh';
 import { maintenanceAction, protectedImports } from '@/lib/maintenance';
-import { currentFence, withFence, parseFence, assertLease, IMPORT_PROTOCOL } from '@/lib/database';
+import { currentFence, withFence, parseFence, assertLease, IMPORT_PROTOCOL, CapacityError } from '@/lib/database';
 import { capacity, estimatedImportBytes, writeCapacity, putArchive, archiveAccounting } from '@/lib/storage';
 
 // Fixed source tables only. The upload API never accepts SQL or arbitrary identifiers.
@@ -52,7 +52,7 @@ export async function POST(request:Request){
     const fence=parseFence(b,source);
     if(['batch','promote','fail','dpd','dpd-complete'].includes(action))fence.generation=String(b.id);
     return await withFence(fence,async()=>{if(action!=='check-finish')await assertLease();return handle(b);});
-  }catch(e){const message=e instanceof Error?e.message:'Import failed. Previous generation retained.';return Response.json({error:message},{status:e instanceof UpdateConflict?409:/D1_ERROR|R2_ERROR|internal error/i.test(message)?503:400});}
+  }catch(e){const message=e instanceof Error?e.message:'Import failed. Previous generation retained.';return Response.json({error:message},{status:e instanceof CapacityError?507:e instanceof UpdateConflict?409:/D1_ERROR|R2_ERROR|internal error/i.test(message)?503:400});}
 }
 async function handle(b:Record<string,any>){
     const action=b.action;
@@ -74,7 +74,7 @@ async function handle(b:Record<string,any>){
       const prior=await db().prepare("SELECT id,state,created,hash,manifest FROM imports WHERE source='dpd' AND hash=? AND state IN ('active','staging') ORDER BY state LIMIT 1").bind(b.hash).first<{id:string;state:string;created:string;manifest:string}>();
       if(prior){if(JSON.parse(prior.manifest).count!==b.count)throw new Error('Generation manifest conflict.');if(prior.state==='staging')await db().prepare('UPDATE imports SET touched=?,ownerRunId=?,ownerEpoch=? WHERE id=?').bind(now(),currentFence()!.runId,currentFence()!.leaseEpoch,prior.id).run();if(prior.state==='active')await db().prepare("UPDATE source_state SET lastChecked=? WHERE id='dpd'").bind(now()).run();return Response.json({id:prior.id,state:prior.state,observedAt:prior.created});}
       const estimate=estimatedImportBytes('dpd',b.bytes??b.count*4096),space=await capacity();
-      const admitted=await db().prepare("INSERT INTO imports(id,source,state,cutoff,hash,manifest,created,touched,estimatedBytes,reservedBytes,ownerRunId,ownerEpoch) SELECT ?,'dpd','staging',?,?,?,?,?,?,?,?,? WHERE ?+(SELECT COALESCE(SUM(reservedBytes),0) FROM imports WHERE state='staging')+?<=? RETURNING id")
+      const admitted=await db().prepare("INSERT INTO imports(id,source,state,cutoff,hash,manifest,created,touched,estimatedBytes,reservedBytes,ownerRunId,ownerEpoch) SELECT ?,'dpd','staging',?,?,?,?,?,?,?,?,? WHERE MAX(?,COALESCE((SELECT bytes FROM storage_usage WHERE id='d1'),0))+(SELECT COALESCE(SUM(bytes),0) FROM database_reservations)+(SELECT COALESCE(SUM(reservedBytes),0) FROM imports WHERE state='staging')+?<=? RETURNING id")
         .bind(b.id,b.observedAt.slice(0,10),b.hash,JSON.stringify({count:b.count}),b.observedAt,now(),estimate,estimate,currentFence()!.runId,currentFence()!.leaseEpoch,space.databaseBytes,estimate,space.limitBytes).first();
       if(!admitted)throw new Error('Insufficient database headroom for the complete catalogue. Previous data retained.');
       return Response.json({id:b.id,state:'staging',observedAt:b.observedAt});
@@ -124,11 +124,11 @@ async function handle(b:Record<string,any>){
       if(typeof b.transform_version!=='string'||b.transform_version.length>100||!b.transform_version||!/^[a-f0-9]{64}$/.test(b.index_hash))throw new Error('A versioned transform and index hash are required.');
       const identity=JSON.stringify({transform:b.transform_version,indexHash:b.index_hash});
       if(!/^\d{4}-\d{2}-\d{2}$/.test(b.cutoff)||!/^[a-f0-9]{64}$/.test(b.hash))throw new Error('Invalid source manifest.');
-      if(!b.manifest||Object.keys(tables).some(t=>!Number.isSafeInteger(b.manifest[t])||b.manifest[t]<=0)||!Number.isSafeInteger(b.bytes)||b.bytes>8_000_000_000)throw new Error('The complete dataset must fit within the configured 8 GB import ceiling.');
+      if(!b.manifest||Array.isArray(b.manifest)||Object.keys(b.manifest).length!==Object.keys(tables).length||Object.keys(tables).some(t=>!Number.isSafeInteger(b.manifest[t])||b.manifest[t]<=0)||!Number.isSafeInteger(b.bytes)||b.bytes>8_000_000_000)throw new Error('The complete dataset must fit within the configured 8 GB import ceiling.');
       const existing=await db().prepare('SELECT hash,state,source FROM imports WHERE id=?').bind(id).first<{hash:string;state:string;source:string}>();if(existing){if(existing.source!=='cv')throw new Error('Generation source conflict.');if(existing.hash!==b.hash)throw new Error('Generation content conflict.');if(existing.state!=='abandoned'){if(existing.state==='staging'){const prior=await db().prepare('SELECT manifest,cutoff,identity FROM imports WHERE id=?').bind(id).first<{manifest:string;cutoff:string;identity:string}>();if(!prior||Object.keys(tables).some(t=>JSON.parse(prior.manifest)[t]!==b.manifest[t])||prior.cutoff!==b.cutoff||prior.identity!==identity)throw new Error('Generation manifest conflict.');await db().prepare('UPDATE imports SET touched=?,ownerRunId=?,ownerEpoch=? WHERE id=?').bind(now(),currentFence()!.runId,currentFence()!.leaseEpoch,id).run();}return Response.json({id,state:existing.state,resumed:true});}}
       // Admission only accepts a validated full-source manifest; no sample mode exists.
       const estimate=estimatedImportBytes('cv',b.bytes),space=await capacity();
-      const admitted=await db().prepare("INSERT INTO imports(id,source,state,cutoff,hash,manifest,created,touched,estimatedBytes,reservedBytes,ownerRunId,ownerEpoch,identity) SELECT ?,'cv','staging',?,?,?,?,?,?,?,?,?,? WHERE ?+(SELECT COALESCE(SUM(reservedBytes),0) FROM imports WHERE state='staging')+?<=? ON CONFLICT(id) DO UPDATE SET state='staging',manifest=excluded.manifest,created=excluded.created,touched=excluded.touched,estimatedBytes=excluded.estimatedBytes,reservedBytes=excluded.reservedBytes,ownerRunId=excluded.ownerRunId,ownerEpoch=excluded.ownerEpoch,identity=excluded.identity,error=NULL WHERE imports.state='abandoned' RETURNING id")
+      const admitted=await db().prepare("INSERT INTO imports(id,source,state,cutoff,hash,manifest,created,touched,estimatedBytes,reservedBytes,ownerRunId,ownerEpoch,identity) SELECT ?,'cv','staging',?,?,?,?,?,?,?,?,?,? WHERE MAX(?,COALESCE((SELECT bytes FROM storage_usage WHERE id='d1'),0))+(SELECT COALESCE(SUM(bytes),0) FROM database_reservations)+(SELECT COALESCE(SUM(reservedBytes),0) FROM imports WHERE state='staging')+?<=? ON CONFLICT(id) DO UPDATE SET state='staging',manifest=excluded.manifest,created=excluded.created,touched=excluded.touched,estimatedBytes=excluded.estimatedBytes,reservedBytes=excluded.reservedBytes,ownerRunId=excluded.ownerRunId,ownerEpoch=excluded.ownerEpoch,identity=excluded.identity,error=NULL WHERE imports.state='abandoned' RETURNING id")
         .bind(id,b.cutoff,b.hash,JSON.stringify(b.manifest),now(),now(),estimate,estimate,currentFence()!.runId,currentFence()!.leaseEpoch,identity,space.databaseBytes,estimate,space.limitBytes).first();
       if(!admitted)throw new Error('Insufficient database headroom for the complete report release. Previous data retained.');
       return Response.json({id,state:'staging'});
@@ -145,11 +145,10 @@ async function handle(b:Record<string,any>){
       if(b.rows.some((r:(string|number|null)[])=>!Number.isSafeInteger(r[0])||Number(r[0])<0||r.some(x=>typeof x==='string'&&x.length>100_000)))throw new Error('Invalid source row identifiers or field lengths.');
       const serialized=JSON.stringify(b.rows),digest=await hash(serialized);const existing=await db().prepare('SELECT hash FROM import_batches WHERE importId=? AND tableName=? AND batchId=?').bind(id,b.table,b.batch).first<{hash:string}>();if(existing){if(existing.hash!==digest)throw new Error('Batch content conflict.');return Response.json({accepted:true,replayed:true});}
       const expected=JSON.parse(run.manifest)[b.table];const count=await db().prepare('SELECT COALESCE(SUM(rows),0) AS n,COALESCE(MAX(batchId),-1) AS last FROM import_batches WHERE importId=? AND tableName=?').bind(id,b.table).first<{n:number;last:number}>();if(b.batch!==(count?.last??-1)+1||(count?.n||0)+b.rows.length>expected)throw new Error('Batches must be sequential and match the manifest.');
-      const totalRows=Object.values(JSON.parse(run.manifest) as Record<string,number>).reduce((a,v)=>a+v,0);
       await db().batch([
         db().prepare(`INSERT INTO ${b.table}(gen,${fields.map(f=>'"'+f+'"').join(',')}) SELECT ?,${fields.map((_,i)=>`json_extract(value,'$[${i}]')`).join(',')} FROM json_each(?)`).bind(id,serialized),
         db().prepare('INSERT INTO import_batches(importId,tableName,batchId,rows,hash) VALUES(?,?,?,?,?)').bind(id,b.table,b.batch,b.rows.length,digest),
-        db().prepare("UPDATE imports SET touched=?,reservedBytes=MAX(0,reservedBytes-?) WHERE id=? AND state='staging'").bind(now(),Math.ceil(run.estimatedBytes*b.rows.length/totalRows),id),
+        db().prepare("UPDATE imports SET touched=? WHERE id=? AND state='staging'").bind(now(),id),
       ]);
       return Response.json({accepted:true,rows:b.rows.length});
     }

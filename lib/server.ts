@@ -5,6 +5,7 @@ import { arr, normalize, parseSPL, sourceDate, unzipLabel } from './core';
 import type { Product, ProductVersion, Result, SourceStatus } from './types';
 import { sources } from './sources';
 import { checkStatus, type UpdateRun } from './updates';
+import { storeCache } from './cache-policy';
 import { putArchive } from './storage';
 import { isMedicationNameQuery, spellingCandidates } from './spelling';
 import { database, LeaseConflict } from './database';
@@ -18,7 +19,7 @@ export async function cached<T>(key:string,ttl:number,source:string,load:()=>Pro
   let value:T;
   try{value=await load();}catch(error){if(error instanceof LeaseConflict)throw error;if(existing&&allowStale)return{value:JSON.parse(existing.value),fetched:new Date(existing.fetched).toISOString(),stale:true};throw error;}
   const serialized=JSON.stringify(value),stamp=Date.now();
-  if(retain(value)&&new TextEncoder().encode(serialized).length<1_500_000){try{await db().prepare('INSERT INTO cache(key,value,fetched,source) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,fetched=excluded.fetched').bind(key,serialized,stamp,source).run();}catch(error){if(error instanceof LeaseConflict)throw error;}}
+  if(retain(value)&&new TextEncoder().encode(serialized).length<1_500_000){try{await storeCache(key,serialized,stamp,source,ttl);}catch(error){if(error instanceof LeaseConflict)throw error;}}
   return {value,fetched:new Date(stamp).toISOString(),stale:false};
 }
 const allowed=new Set(['dailymed.nlm.nih.gov','rxnav.nlm.nih.gov','api.fda.gov','health-products.canada.ca']);

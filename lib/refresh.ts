@@ -1,3 +1,4 @@
+import { currentFence } from './database';
 import { db, loadLabel, now, UpstreamError } from './server';
 import { CHECK_LEASE_MS, UpdateConflict, type UpdateRun } from './updates';
 
@@ -24,6 +25,8 @@ export async function refreshAction(b: Record<string, unknown>): Promise<Respons
     if (cycle.owner === b.runId) return Response.json({ ...cycle, ...await progress(cycle.cycle), resumed: true });
     const pending = cycle.cycle && await db().prepare("SELECT 1 FROM label_refresh WHERE cycle=? AND state<>'done' LIMIT 1").bind(cycle.cycle).first();
     cycle = { cycle: pending ? cycle.cycle : String(b.runId), owner: String(b.runId), started: pending ? cycle.started : now() };
+    const queued=await db().prepare("SELECT COUNT(DISTINCT substr(id,4,36)) AS n FROM products WHERE id GLOB 'US:*'").first<{n:number}>();
+    const fence=currentFence();if(fence)fence.growthBytes=Math.max(131072,(queued?.n||0)*1024);
     // One row per SPL, even when a document lists many NDCs or strengths. Seeding stays in SQLite.
     await db().batch([
       db().prepare(`INSERT INTO label_refresh(setId,cycle,state)

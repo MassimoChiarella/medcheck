@@ -1,3 +1,4 @@
+import { reconcileDatabaseReservations } from './database';
 import { env } from 'cloudflare:workers';
 import { db, now, hash } from './server';
 import { CHECK_LEASE_MS, UpdateConflict, type UpdateRun } from './updates';
@@ -20,7 +21,9 @@ async function owned(b: Record<string,unknown>) {
 }
 export async function maintenanceAction(b: Record<string,unknown>): Promise<Response|null> {
   if (!['maintenance-plan','maintenance-clean','maintenance-scan','maintenance-reconcile-archives','maintenance-catalogue-archives'].includes(String(b.action))) return null;
-  const run = await owned(b), protectedIds = await protectedImports();
+  const run = await owned(b);
+  await reconcileDatabaseReservations();
+  const protectedIds = await protectedImports();
   if(b.action==='maintenance-catalogue-archives'){
     const cursor=typeof b.cursor==='string'&&b.cursor.length<=4096?b.cursor:'';
     const page=await env.FILES.list({prefix:'canada/catalogue/',limit:2,...(cursor?{cursor}:{})});

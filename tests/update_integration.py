@@ -62,6 +62,7 @@ first=send(action='check-begin',source='cv',runId=a)
 assert send(action='check-begin',source='cv',runId=a)['leaseEpoch']==first['leaseEpoch']
 rows={'cv_products':[[101,'FENCED','[]']],'cv_reports':[[101,'FENCE',1,'2026-04-01','2026-04-01',0,'[]']],'cv_report_drugs':[[101,101,101,'FENCED','Suspect']],'cv_reactions':[[101,101,'Test']],'cv_links':[[101,101,'OTHER','Duplicate']]}
 manifest=dict(id=gen,cutoff='2026-04-30',hash=gen*4,index_hash=gen*4,transform_version='test-v1',bytes=1000,manifest={t:1 for t in rows})
+rejects(action='begin',source='cv',runId=a,**{**manifest,'manifest':{**manifest['manifest'],'extra':'not a source table'}})
 send(action='begin',source='cv',runId=a,**manifest)
 sql("UPDATE update_runs SET heartbeat='2000-01-01T00:00:00Z' WHERE source='cv'")
 send(action='check-begin',source='cv',runId=b)

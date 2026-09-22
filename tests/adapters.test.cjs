@@ -7,7 +7,7 @@ function harness(handler=()=>null,fetcher=async()=>new Response('{}'),overrides=
   database.batch=async items=>Promise.all(items.map(x=>x.run()));
   function load(file){file=file.replace(/\.ts$/,'');if(modules[file])return modules[file];const exports={};modules[file]=exports;
     const code=ts.transpileModule(fs.readFileSync(`lib/${file}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-    const req=id=>id==='cloudflare:workers'?{env:{DB:overrides.database||database,FILES:overrides.files}}:id==='./storage'&&!overrides.realStorage?{putArchive:overrides.putArchive||(async()=>{}),writeCapacity:async()=>{},reserveDatabase:async()=>()=>{},cacheWrite:async()=>{}}:id==='./updates'&&!overrides.realStorage?{checkStatus:()=>({})}:id.startsWith('./')?load(id.slice(2)):require(id);
+    const req=id=>id==='./database'&&!overrides.realStorage?{database:()=>database,LeaseConflict:class extends Error{}}:id==='cloudflare:workers'?{env:{...overrides.environment,DB:overrides.database||database,FILES:overrides.files}}:id==='./storage'&&!overrides.realStorage?{putArchive:overrides.putArchive||(async()=>{}),writeCapacity:async()=>{},reserveDatabase:async()=>()=>{},cacheWrite:async()=>{}}:id==='./updates'&&!overrides.realStorage?{checkStatus:()=>({})}:id.startsWith('./')?load(id.slice(2)):require(id);
     vm.runInNewContext(code,{exports,require:req,crypto:crypto.webcrypto,fetch:fetcher,Date,URL,TextEncoder,TextDecoder,Response,AbortSignal,Uint8Array,Buffer,setTimeout:f=>setTimeout(f,0)},{filename:file+'.ts'});return exports;
   }
   return {load,calls};
@@ -52,10 +52,10 @@ function storageFixture(hooks={}){
   const {DatabaseSync}=require('node:sqlite'),sqlite=new DatabaseSync(':memory:');
   for(const file of fs.readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sqlite.exec(fs.readFileSync('drizzle/'+file,'utf8'));
   const execute=(sql,args)=>{const results=sqlite.prepare(sql).all(...args);return {results,meta:{changes:sqlite.prepare('SELECT changes() n').get().n,size_after:sqlite.prepare('PRAGMA page_count').get().page_count*4096}};};
-  const db={prepare(sql){const make=(args=[])=>({sql,args,bind:(...values)=>make(values),all:async()=>execute(sql,args),run:async()=>execute(sql,args),first:async()=>{if(hooks.first)hooks.first(sql,args);return execute(sql,args).results[0]||null;}});return make();},async batch(items){sqlite.exec('BEGIN');let result;try{result=items.map(x=>execute(x.sql,x.args));sqlite.exec('COMMIT');}catch(error){sqlite.exec('ROLLBACK');throw error;}if(hooks.batch)hooks.batch(items);return result;}};
+  const db={prepare(sql){const make=(args=[])=>({sql,args,bind:(...values)=>make(values),all:async()=>{const result=execute(sql,args);if(hooks.all)await hooks.all(sql,args,result);return result;},run:async()=>execute(sql,args),first:async()=>{if(hooks.first)hooks.first(sql,args);return execute(sql,args).results[0]||null;}});return make();},async batch(items){sqlite.exec('BEGIN');let result;try{result=items.map(x=>execute(x.sql,x.args));sqlite.exec('COMMIT');}catch(error){sqlite.exec('ROLLBACK');throw error;}if(hooks.batch)await hooks.batch(items);return result;}};
   const objects=new Map();let puts=0;
   const files={async head(key){return objects.get(key)||null;},async get(key){const item=objects.get(key);return item?{...item,arrayBuffer:async()=>item.body.buffer}:null;},async list(){return {objects:[...objects.values()],truncated:false};},async put(key,value,options){puts++;if(hooks.put)await hooks.put(key);if(!objects.has(key)){const body=typeof value==='string'?new TextEncoder().encode(value):value;objects.set(key,{key,body,size:body.length,etag:key,uploaded:new Date(),customMetadata:options.customMetadata});}return objects.get(key);},async delete(key){if(hooks.delete)await hooks.delete(key);objects.delete(key);}};
-  const h=harness(()=>null,async()=>new Response('{}'),{database:db,files,realStorage:true});
+  const h=harness(()=>null,async()=>new Response('{}'),{database:db,files,realStorage:true,environment:hooks.environment});
   return {sqlite,db,files,objects,load:h.load,puts:()=>puts};
 }
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
@@ -107,4 +107,39 @@ test('unavailable R2 rehydration falls through to healthy upstream archive',asyn
   let requested=0;const bytes=require('fflate').zipSync({'label.xml':new TextEncoder().encode(fixture)});
   const h=harness(sql=>sql.includes('productId GLOB')?{data:JSON.stringify({archiveKey:'stored',archiveHash:'missing'})}:sql.startsWith('INSERT INTO source_budget')?{count:1}:null,async()=>{requested++;return new Response(bytes);},{files:{get:async()=>{throw new Error('R2 outage');}}});
   const parsed=h.load('core').parseSPL(fixture),value=await h.load('server').loadLabel(parsed.products[0].identifiers.setid,'8');assert.equal(value.value.version,'8');assert.equal(requested,1);
+});
+test('concurrent near-limit database writers cannot spend the same headroom',async()=>{
+  const started=deferred(),release=deferred();let pause=true;
+  const f=storageFixture({environment:{IMPORT_DATABASE_LIMIT_BYTES:'50000000'},batch:async items=>{if(pause&&items.some(x=>x.sql.startsWith('INSERT INTO products'))){pause=false;started.resolve();await release.promise;}}}),db=f.load('database').database();
+  f.sqlite.exec("INSERT INTO storage_usage(id,bytes,initialized,updated) VALUES('d1',49800000,1,'2026-01-01')");
+  const first=db.prepare('INSERT INTO products(id,data,observed) VALUES(?,?,?)').bind('CA:1','{}','2026-01-01').run();await started.promise;
+  await assert.rejects(db.prepare('INSERT INTO products(id,data,observed) VALUES(?,?,?)').bind('CA:2','{}','2026-01-01').run(),/capacity/);
+  release.resolve();await first;assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM products').get().n,1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM database_reservations').get().n,0);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM capacity_guards').get().n,0);f.sqlite.close();
+});
+test('import reservations shrink only by observed transaction growth',async()=>{
+  const f=storageFixture(),owner={...lease(f),generation:'a'.repeat(16)},fencing=f.load('database');
+  f.sqlite.prepare("INSERT INTO imports(id,source,state,cutoff,hash,manifest,created,reservedBytes,ownerRunId,ownerEpoch) VALUES(?,'cv','staging','2026-01-01',?,'{}','2026-01-01',20000000,?,1)").run(owner.generation,'a'.repeat(64),owner.runId);
+  const before=f.sqlite.prepare('PRAGMA page_count').get().page_count*4096;
+  await fencing.withFence(owner,()=>fencing.database().prepare('INSERT INTO cv_products(gen,id,name,ingredients) VALUES(?,?,?,?)').bind(owner.generation,1,'A'.repeat(50000),'[]').run());
+  const after=f.sqlite.prepare('PRAGMA page_count').get().page_count*4096,reserved=f.sqlite.prepare('SELECT reservedBytes FROM imports').get().reservedBytes;
+  assert.ok(20000000-reserved<=after-before);assert.ok(reserved>19000000);f.sqlite.close();
+});
+test('cache bounds reject growth and protect the sole parsed historical copy',async()=>{
+  const f=storageFixture({environment:{CACHE_LIMIT_ENTRIES:'10',CACHE_LIMIT_BYTES:'1500000'}}),cache=f.load('cache-policy'),stamp=Date.now();
+  for(let i=0;i<11;i++)await cache.storeCache('ordinary:'+i,'{}',stamp,'rxnorm',1000);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM cache').get().n,10);
+  await cache.storeCache('ordinary:0','{"new":true}',stamp,'rxnorm',1000);assert.equal(f.sqlite.prepare("SELECT value FROM cache WHERE key='ordinary:0'").get().value,'{"new":true}');
+  f.sqlite.exec('DELETE FROM cache');f.sqlite.prepare('INSERT INTO cache(key,value,fetched,source,bytes,expires) VALUES(?,?,0,?,100,0)').run('spl:legacy:8',JSON.stringify({versions:[{id:'historic'}]}),'dailymed');
+  await cache.storeCache('new','{}',stamp,'rxnorm',1000);assert.ok(f.sqlite.prepare("SELECT key FROM cache WHERE key='spl:legacy:8'").get());
+  f.sqlite.prepare('INSERT INTO versions(id,productId,version,data,observed) VALUES(?,?,?,?,?)').run('historic','US:test:1','8',JSON.stringify({archiveStatus:'verified',archiveKey:'verified.xml'}),'2026-01-01');
+  await cache.storeCache('new2','{}',stamp,'rxnorm',1000);assert.equal(f.sqlite.prepare("SELECT key FROM cache WHERE key='spl:legacy:8'").get(),undefined);assert.ok(f.sqlite.prepare("SELECT id FROM versions WHERE id='historic'").get());f.sqlite.close();
+});
+
+test('maintenance reconciliation cannot remove reservations committed after its size sample',async()=>{
+  const started=deferred(),release=deferred();let pause=true;
+  const f=storageFixture({all:async sql=>{if(pause&&sql.startsWith('SELECT id FROM database_reservations')){pause=false;started.resolve();await release.promise;}}}),owner=lease(f,'maintenance'),fencing=f.load('database');
+  f.sqlite.exec("INSERT INTO database_reservations(id,bytes,created) VALUES('sampled',10000,'2026-01-01')");
+  const scan=fencing.withFence(owner,()=>fencing.reconcileDatabaseReservations());await started.promise;
+  f.sqlite.exec("INSERT INTO database_reservations(id,bytes,created) VALUES('newer',20000,'2026-01-01')");release.resolve();await scan;
+  assert.deepEqual(f.sqlite.prepare('SELECT id FROM database_reservations ORDER BY id').all().map(x=>x.id),['newer']);f.sqlite.close();
 });

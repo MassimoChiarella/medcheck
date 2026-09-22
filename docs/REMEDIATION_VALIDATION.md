@@ -9,7 +9,8 @@ This ledger distinguishes implemented fixes from verified release checks. The de
 | Import ownership and transactional fencing | A01 | Implemented; local regression verified | Protocol v2, epoch ownership, guarded D1 batches, immutable R2 writes, manifest-checked adoption; isolated Worker takeover, source isolation, stale publication and rollback checks pass |
 | Durable identity and history | A02/A18 | Implemented; local regression verified | Durable identity, saved-version/history fallback, numeric SPL chronology and API reversal rejection |
 | Archive publication and reservations | A11/A12 | Implemented; local regression verified | Immutable bytes, operation-owned acknowledgements, atomic scan checkpoints, bounded legacy-reference repair |
-| Database growth and full capacity qualification | A13/A14 | In progress | Shared D1 growth policy and cache retention are next; hosted full-size qualification remains gated |
+| Database growth and cache policy | A13 | Implemented; local regression verified | Atomic capacity reservations include concurrent interactive/import writes; bounded cache retention protects history |
+| Full capacity qualification | A14 | Pending external qualification | Actual free Sites allocation and an isolated full-data target are not established; no limit was relaxed |
 | Search and evidence correctness | A03–A10 | Not started | — |
 | Query batching and bounded reuse | A24 | Not started | — |
 | Research state and bookmarks | A15/A19/A20/A22 | Not started | — |
@@ -44,3 +45,15 @@ Canadian live observations archive exact payload bytes before coherently publish
 `python3 scripts/maintain_storage.py --repair-archives` adds bounded legacy catalogue and version-reference reconciliation. It verifies source/product hashes and does not substitute newly downloaded bytes for missing historical evidence. Unresolved legacy references remain explicitly unverified.
 
 Validation: typecheck/lint; adapter tests with SQLite transaction and R2 fault fixtures; normal unit suite; isolated Worker integration. Scenarios include expired-owner late PUT/DELETE completion, duplicate acknowledgements, uncertain-plus-successful retry, nondispatch, interrupted scan checkpoint, legacy bulk-reference backfill, R2 failure/upstream recovery, archive rehydration, Canadian retry-before-publication, concurrent identical chunks, conservative uncertain reservations and lowering the old inflated meter. Full hosted size/CPU qualification remains pending.
+
+## Milestone 4 — Database growth and cache retention
+
+Growing writes now reserve conservative headroom in the same D1 transaction as their data. Admission combines the monotonic physical-size baseline, active import reservations and outstanding interactive reservations. Settlement consumes an import reservation only by that transaction's observed physical growth, advances the baseline, and releases the write reservation atomically. Cleanup does not subtract free pages from billed physical size. Lost settlement acknowledgements remain safe; maintenance only clears reservations included in its own size sample. Label-refresh queue seeding supplies a count-based bulk estimate. Unknown CV manifest fields are rejected.
+
+Caches default to 64,000,000 serialized bytes and 2,000 entries. Per-installation settings can lower these budgets. Retention is bounded to 7–90 days, distinct from source freshness; expired entries are swept in pages of 100. Parsed SPL entries are protected until all referenced inspected versions have verified durable source references. Cache persistence failure cannot turn a successful upstream response into source unavailability.
+
+Validation: typecheck/lint, normal unit/adapter tests, and disposable Worker integration. Added overlapping near-limit writes, observed versus forecast reservation consumption, concurrent maintenance sampling, entry-cap enforcement, existing-key replacement, and sole-copy historical-cache retention tests.
+
+A14 remains a release gate: local SQLite/Worker checks do not establish hosted free entitlement or full-generation peak size. D1 documents `size_after` per query, but the deployed provider must be checked for useful per-statement values in a batch before relying on measured reservation consumption for capacity forecasts. If it reports a common final size, growth credit remains zero and admission stays conservative. The three complete hosted generation cycles, actual allocation, query/CPU budgets, and interrupted-cycle/rollback measurements are still required. Ordinary Cloudflare Free's documented per-database allowance is not sufficient for the previously measured complete Canadian index. No paid upgrade, dataset truncation, or relaxed admission estimate was used.
+
+References checked during implementation: [D1 result metadata](https://developers.cloudflare.com/d1/worker-api/return-object/), [D1 limits](https://developers.cloudflare.com/d1/platform/limits/).

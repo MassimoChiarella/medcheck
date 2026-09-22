@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index, primaryKey, check } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-export const cache = sqliteTable('cache', { key: text().primaryKey(), value: text().notNull(), fetched: integer().notNull(), source: text().notNull(), asOf: text() });
+export const cache = sqliteTable('cache', { key: text().primaryKey(), value: text().notNull(), fetched: integer().notNull(), source: text().notNull(), asOf: text(), bytes:integer().notNull().default(0), expires:integer().notNull().default(0) },t=>[index('cache_expiry').on(t.expires,t.fetched)]);
 export const products = sqliteTable('products', { id: text().primaryKey(), data: text().notNull(), observed: text().notNull() });
 export const versions = sqliteTable('versions', { id: text().primaryKey(), productId: text().notNull(), version: text().notNull(), data: text().notNull(), hash: text(), observed: text().notNull() }, t=>[index('version_product').on(t.productId,t.observed)]);
 export const imports = sqliteTable('imports', { id: text().primaryKey(), source: text().notNull(), state: text().notNull(), cutoff: text().notNull(), hash: text().notNull(), manifest: text().notNull(), created: text().notNull(), completed: text(), error: text(), touched: text(), estimatedBytes: integer().notNull().default(0), reservedBytes: integer().notNull().default(0), ownerRunId: text(), ownerEpoch: integer(), identity: text().notNull().default('') });
@@ -37,3 +37,6 @@ export const archiveWrites = sqliteTable('archive_writes', {
 },t=>[index('archive_scan').on(t.seenScan)]);
 
 export const archiveAttempts = sqliteTable('archive_attempts', { id:text().primaryKey(), key:text().notNull(), kind:text().notNull(), registryId:text().notNull(), hash:text().notNull(), bytes:integer().notNull(), created:text().notNull() },t=>[index('archive_attempt_key').on(t.key)]);
+
+export const databaseReservations = sqliteTable('database_reservations', { id:text().primaryKey(), bytes:integer().notNull(), generation:text(), created:text().notNull() });
+export const capacityGuards = sqliteTable('capacity_guards', { id:text().primaryKey(), valid:integer().notNull() },t=>[check('capacity_guard_valid',sql`${t.valid}=1`)]);

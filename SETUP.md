@@ -110,3 +110,9 @@ The **Validate application changes** workflow separately checks pushes and pull 
 ### Archive accounting upgrade
 
 After deploying the archive-registry migration, run storage maintenance before importing or archiving new files in an installation with existing R2 objects. The scan initializes the dedicated meter in bounded pages. Run `python3 scripts/maintain_storage.py --repair-archives` with your installation's credentials to backfill legacy catalogue and version references. This verifies existing bytes; it cannot recreate an unavailable historical payload. Uncertain operations remain reserved and protected from cleanup. The maintenance output reports measured bytes, conservatively accounted bytes, unresolved writes, and whether the result is exact.
+
+### Cache and database write budgets
+
+`CACHE_LIMIT_BYTES` defaults to 64,000,000 (supported range 1,500,000–128,000,000) and `CACHE_LIMIT_ENTRIES` to 2,000 (10–5,000). Response caches retain 7–90 days according to freshness TTL and sweep up to 100 expired eligible entries at a time. Source bytes and product history are separate from these response caches. A parsed historical label is protected until its durable archive reference exists.
+
+Database growth admission includes active imports and concurrent interactive writes. Its conservative estimates require complete-data qualification on the actual host; the provider's physical limit is the final ceiling. Maintenance reconciles only the completed write reservations covered by its size sample. It never treats SQLite free pages as a reduction in physical storage usage.
