@@ -7,16 +7,19 @@ import { sources } from './sources';
 import { checkStatus, type UpdateRun } from './updates';
 import { putArchive } from './storage';
 import { isMedicationNameQuery, spellingCandidates } from './spelling';
-import { database } from './database';
+import { database, LeaseConflict } from './database';
 
 export const db=database;
 export const now=()=>new Date().toISOString();
 export async function hash(value:string|Uint8Array){const bytes=typeof value==='string'?new TextEncoder().encode(value):value;return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes as BufferSource))].map(b=>b.toString(16).padStart(2,'0')).join('');}
-export async function cached<T>(key:string,ttl:number,source:string,load:()=>Promise<T>,allowStale=true):Promise<{value:T;fetched:string;stale:boolean}>{
+export async function cached<T>(key:string,ttl:number,source:string,load:()=>Promise<T>,allowStale=true,retain:(value:T)=>boolean=()=>true):Promise<{value:T;fetched:string;stale:boolean}>{
   const existing=await db().prepare('SELECT value,fetched FROM cache WHERE key=?').bind(key).first<{value:string;fetched:number}>();
   if(existing&&Date.now()-existing.fetched<ttl)return {value:JSON.parse(existing.value),fetched:new Date(existing.fetched).toISOString(),stale:false};
-  try{const value=await load(),serialized=JSON.stringify(value),stamp=Date.now();if(serialized.length<1_500_000)await db().prepare('INSERT INTO cache(key,value,fetched,source) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,fetched=excluded.fetched').bind(key,serialized,stamp,source).run();return{value,fetched:new Date(stamp).toISOString(),stale:false};}
-  catch(error){if(existing&&allowStale)return{value:JSON.parse(existing.value),fetched:new Date(existing.fetched).toISOString(),stale:true};throw error;}
+  let value:T;
+  try{value=await load();}catch(error){if(error instanceof LeaseConflict)throw error;if(existing&&allowStale)return{value:JSON.parse(existing.value),fetched:new Date(existing.fetched).toISOString(),stale:true};throw error;}
+  const serialized=JSON.stringify(value),stamp=Date.now();
+  if(retain(value)&&new TextEncoder().encode(serialized).length<1_500_000){try{await db().prepare('INSERT INTO cache(key,value,fetched,source) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,fetched=excluded.fetched').bind(key,serialized,stamp,source).run();}catch(error){if(error instanceof LeaseConflict)throw error;}}
+  return {value,fetched:new Date(stamp).toISOString(),stale:false};
 }
 const allowed=new Set(['dailymed.nlm.nih.gov','rxnav.nlm.nih.gov','api.fda.gov','health-products.canada.ca']);
 async function claimBudget(host:string){
@@ -57,14 +60,31 @@ export async function loadLabel(setid:string,version?:string,force=false){
   const key=`spl:${setid}:${version||'current'}`;
   return cached(key,force?0:version?365*86400000:86400000,'dailymed',async()=>{
     const url=version?new URL(`https://dailymed.nlm.nih.gov/dailymed/getFile.cfm?type=zip&setid=${setid}&version=${version}`):new URL(`https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/${setid}.xml`);
-    const bytes=await fetchBytes(url);const xml=version?unzipLabel(bytes):new TextDecoder().decode(bytes);const parsed=parseSPL(xml,setid);const contentHash=await hash(bytes);
+    let bytes:Uint8Array|undefined,archivedKey:string|undefined,observedAt=now();
+    if(version){try{
+      const prior=await db().prepare("SELECT data FROM versions WHERE productId GLOB ? AND version=? AND json_extract(data,'$.archiveStatus')='verified' LIMIT 1").bind(`US:${setid}:*`,version).first<{data:string}>();
+      if(prior){const v:ProductVersion=JSON.parse(prior.data);if(v.archiveKey){const object=await env.FILES.get(v.archiveKey);if(object&&object.size<=12*1024*1024){const raw=new Uint8Array(await object.arrayBuffer());if(await hash(raw)===v.archiveHash){bytes=raw;archivedKey=v.archiveKey;observedAt=v.observedAt||observedAt;}}}}
+    }catch{/* Stored-source access is optional when upstream remains available. */}}
+    bytes??=await fetchBytes(url);
+    const zipped=archivedKey?archivedKey.endsWith('.zip'):!!version;
+    const xml=zipped?unzipLabel(bytes):new TextDecoder().decode(bytes),parsed=parseSPL(xml,setid),contentHash=await hash(bytes);
     if(version&&parsed.version!==version)throw new Error('The archive version did not match the request.');
-    await putArchive(`labels/${setid}/${parsed.version}/${contentHash}.${version?'zip':'xml'}`,bytes,{httpMetadata:{contentType:version?'application/zip':'application/xml'},customMetadata:{source:url.toString(),fetchedAt:now(),sha256:contentHash}});
-    for(const v of parsed.versions){v.contentHash=contentHash;v.observedAt=now();await saveVersion(v);}
-    if(!version)for(const p of parsed.products)await saveProduct(p);
+    const archiveKey=archivedKey||`labels/${setid}/${parsed.version}/${contentHash}.${zipped?'zip':'xml'}`;
+    try{
+      if(!archivedKey)await putArchive(archiveKey,bytes,{httpMetadata:{contentType:zipped?'application/zip':'application/xml'},customMetadata:{source:url.toString(),fetchedAt:observedAt,sha256:contentHash}});
+      for(const v of parsed.versions){v.contentHash=contentHash;v.observedAt=observedAt;v.archiveKey=archiveKey;v.archiveHash=contentHash;v.archiveStatus='verified';}
+      const writes=parsed.versions.map(v=>db().prepare('INSERT INTO versions(id,productId,version,data,hash,observed) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,hash=excluded.hash').bind(v.id,v.productId,v.version,JSON.stringify(v),contentHash,observedAt));
+      if(!version)writes.push(...parsed.products.map(p=>db().prepare('INSERT INTO products(id,data,observed) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed').bind(p.id,JSON.stringify(p),observedAt)));
+      if(writes.length)await db().batch(writes);
+    }catch(error){
+      if(error instanceof LeaseConflict||force)throw error;
+      for(const v of parsed.versions){v.archiveStatus='unavailable';v.completeness='partial';v.notes=[...v.notes||[],'Source content was retrieved but could not be preserved in this installation. Retry to archive it.'];}
+      for(const p of parsed.products)p.persistence='unavailable';
+    }
     return parsed;
-  },!force);
+  },!force,value=>value.versions.every(v=>v.archiveStatus==='verified'));
 }
+
 export async function searchUS(query:string,page:number):Promise<Result<Product[]>>{
   const params:Record<string,string|number>={pagesize:6,page};
   if(/^[\d-]{8,14}$/.test(query))params.ndc=query;else params.drug_name=query;
@@ -106,10 +126,23 @@ async function liveCaProduct(code:number):Promise<Product>{
   const p=arr<any>(raw.value)[0];if(!p||p.class_name!=='Human')throw new Error('A matching human medication was not available.');
   const ingredients=arr<any>(active.value).map(a=>({name:String(a.ingredient_name||''),strength:[a.strength,a.strength_unit].filter(Boolean).join(' ')+(a.dosage_value&&a.dosage_unit?' / '+a.dosage_value+' '+a.dosage_unit:'')}));
   const product:Product={id:`CA:${code}`,name:p.brand_name,genericName:ingredients.map(i=>i.name).join(' / '),market:'CA',manufacturer:p.company_name||'Unknown',strength:ingredients.map(i=>i.strength).join(' / '),form:arr<any>(form.value).map(x=>x.pharmaceutical_form_name||x.dosage_form_name).filter(Boolean).join(', '),route:arr<any>(route.value).map(x=>x.route_of_administration_name).filter(Boolean).join(', '),identifiers:{drugCode:code,din:String(p.drug_identification_number)},ingredients,sourceUrl:`https://health-products.canada.ca/dpd-bdpp/info?lang=eng&code=${code}`,status:arr<any>(status.value).map(x=>x.status).filter(Boolean).join(', ')};
-  await saveProduct(product);const contentHash=await hash(JSON.stringify(product));
-  const previous=await db().prepare('SELECT hash FROM versions WHERE productId=? ORDER BY observed DESC LIMIT 1').bind(product.id).first<{hash:string}>();
-  if(previous?.hash!==contentHash){const stamp=now();const v:ProductVersion={id:`${product.id}@${stamp}`,productId:product.id,version:stamp,observedAt:stamp,sourceUpdatedAt:sourceDate(p.last_update_date),active:ingredients,form:product.form,route:product.route,sourceUrl:product.sourceUrl,contentHash,completeness:'partial',notes:['Observed product snapshot. Source update dates are not formulation effective dates. Historical inactive ingredients and label sections are unavailable from this API.']};await saveVersion(v);await putArchive(`canada/products/${code}/${contentHash}.json`,JSON.stringify({product,raw:raw.value,active:active.value,form:form.value,route:route.value,status:status.value}),{httpMetadata:{contentType:'application/json'},customMetadata:{fetchedAt:stamp}});}
-  return product;
+  const contentHash=await hash(JSON.stringify(product)),rawPayload=JSON.stringify({product,raw:raw.value,active:active.value,form:form.value,route:route.value,status:status.value}),archiveHash=await hash(rawPayload),archiveKey=`canada/products/${code}/${archiveHash}.json`,stamp=now();
+  try{
+    await putArchive(archiveKey,rawPayload,{httpMetadata:{contentType:'application/json'},customMetadata:{fetchedAt:stamp,sha256:archiveHash}});
+    const previous=await db().prepare('SELECT id,hash,data FROM versions WHERE productId=? ORDER BY observed DESC,id DESC LIMIT 1').bind(product.id).first<{id:string;hash:string;data:string}>();
+    const previousVersion:ProductVersion|undefined=previous?JSON.parse(previous.data):undefined;
+    const priorObject=previousVersion?.archiveKey?await env.FILES.head(previousVersion.archiveKey):null;
+    const missingId=previous&&(!priorObject||priorObject.customMetadata?.sha256!==previousVersion?.archiveHash)?previous.id:null;
+    const v:ProductVersion={id:`${product.id}@${stamp}`,productId:product.id,version:stamp,observedAt:stamp,sourceUpdatedAt:sourceDate(p.last_update_date),active:ingredients,form:product.form,route:product.route,sourceUrl:product.sourceUrl,contentHash,archiveKey,archiveHash,archiveStatus:'verified',completeness:'partial',notes:['Observed product snapshot. Source update dates are not formulation effective dates. Historical inactive ingredients and label sections are unavailable from this API.',...(missingId?['A previous observation has no verified source archive. This new retrieval does not recreate its historical bytes.']:[])]};
+    await db().batch([
+      db().prepare(`INSERT INTO versions(id,productId,version,data,hash,observed) SELECT ?,?,?,?,?,? WHERE NOT EXISTS(
+        SELECT 1 FROM versions WHERE id=(SELECT id FROM versions WHERE productId=? ORDER BY observed DESC,id DESC LIMIT 1)
+        AND hash=? AND json_extract(data,'$.archiveStatus')='verified' AND id IS NOT ?) ON CONFLICT(id) DO NOTHING`)
+        .bind(v.id,v.productId,v.version,JSON.stringify(v),contentHash,stamp,product.id,contentHash,missingId),
+      db().prepare('INSERT INTO products(id,data,observed) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed WHERE julianday(excluded.observed)>=julianday(products.observed)').bind(product.id,JSON.stringify(product),stamp),
+    ]);
+    return {...product,observedAt:stamp,persistence:'archived'};
+  }catch(error){if(error instanceof LeaseConflict)throw error;return {...product,observedAt:stamp,persistence:'unavailable',dataStatus:'partial'};}
 }
 async function liveSearchCA(query:string,page:number):Promise<Result<Product[]>>{
   const notes:string[]=[];let items:any[]=[];

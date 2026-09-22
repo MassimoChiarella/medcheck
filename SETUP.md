@@ -106,3 +106,7 @@ Owners watching this repository can enable GitHub's built-in Actions notificatio
 The hosted cron expression is 07:17 UTC daily. It only runs when the repository variable `MEDCHECK_UPDATES_ENABLED` is `true`; manual runs do not require the variable. Keep it unset or `false` during private review, enable it with the public launch after a successful manual run, and set it to `false` to pause. Verify the resulting run in Actions: GitHub schedules can be delayed and public-repository schedules can be disabled after inactivity. This is a daily check, not a guarantee that source data changes daily.
 
 The **Validate application changes** workflow separately checks pushes and pull requests using disposable test data and no deployment credentials. Public pull-request checks cannot import into the hosted app.
+
+### Archive accounting upgrade
+
+After deploying the archive-registry migration, run storage maintenance before importing or archiving new files in an installation with existing R2 objects. The scan initializes the dedicated meter in bounded pages. Run `python3 scripts/maintain_storage.py --repair-archives` with your installation's credentials to backfill legacy catalogue and version references. This verifies existing bytes; it cannot recreate an unavailable historical payload. Uncertain operations remain reserved and protected from cleanup. The maintenance output reports measured bytes, conservatively accounted bytes, unresolved writes, and whether the result is exact.

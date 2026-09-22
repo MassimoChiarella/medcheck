@@ -3,7 +3,7 @@ import argparse,json,os,time
 from import_canada import post,validate_target
 from update_run import SourceCheck
 
-def maintain(base,token,apply=False):
+def maintain(base,token,apply=False,repair=False):
     deadline=time.monotonic()+1800
     deleted_rows=0
     with SourceCheck('maintenance',base,token,post) as check:
@@ -25,12 +25,24 @@ def maintain(base,token,apply=False):
                         if result['done']:break
             if not plan['hasMore']:break
             after=plan['cursor']
+        if repair:
+            archive_cursor=''
+            while True:
+                catalogue=request('maintenance-catalogue-archives',cursor=archive_cursor)
+                if catalogue['complete']:break
+                archive_cursor=catalogue['cursor']
+            after=''
+            while True:
+                repaired=request('maintenance-reconcile-archives',after=after)
+                print(json.dumps({'archiveReferences':repaired}),flush=True)
+                if repaired['complete']:break
+                after=repaired['cursor']
         cursor=''
         while True:
             scan=request('maintenance-scan',cursor=cursor,dryRun=not apply)
             if scan['complete']:break
             cursor=scan['cursor']
-        result={k:scan[k] for k in ['archiveBytes','archiveLimitBytes','scannedObjects','deletedObjects','deletedBytes','dryRun']}
+        result={k:scan[k] for k in ['archiveBytes','archiveLimitBytes','scannedObjects','deletedObjects','deletedBytes','dryRun','accountedBytes','unresolvedWrites','exact']}
         result.update(eligibleGenerations=candidates,deletedRows=deleted_rows)
         print(json.dumps(result),flush=True)
         check.outcome='updated' if deleted_rows or scan['deletedObjects'] else 'unchanged'
@@ -39,8 +51,9 @@ def maintain(base,token,apply=False):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply',action='store_true',help='Delete eligible staging work; the default only audits.')
+    parser.add_argument('--repair-archives',action='store_true',help='Verify stored version archive references in bounded pages; unavailable historical bytes stay unavailable.')
     args=parser.parse_args()
     base=validate_target(os.getenv('MEDCHECK_URL',''),os.getenv('MEDCHECK_IMPORT_TOKEN',''))
-    maintain(base,os.environ['MEDCHECK_IMPORT_TOKEN'],args.apply)
+    maintain(base,os.environ['MEDCHECK_IMPORT_TOKEN'],args.apply,args.repair_archives)
 
 if __name__=='__main__':main()

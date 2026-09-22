@@ -67,20 +67,35 @@ send(action='check-finish',source='maintenance',runId=run,outcome='failed')
 run=uuid.uuid4().hex;send(action='check-begin',source='maintenance',runId=run)
 while not send(action='maintenance-clean',source='maintenance',runId=run,id=gen)['done']:pass
 assert sql(f"SELECT state,reservedBytes FROM imports WHERE id='{gen}'")==[{'state':'abandoned','reservedBytes':0}]
+sql("INSERT OR REPLACE INTO cache(key,value,fetched,source) VALUES('storage:r2','{\"bytes\":8000000000}',0,'maintenance')")
+# An absent, unresolved remote write remains reserved after a complete bucket scan.
+sql("INSERT INTO archive_writes(key,hash,bytes,state,writeId,inFlight,created,updated) VALUES('uncertain-fixture','',1234,'uncertain','fixture',1,'2000-01-01','2000-01-01')")
 cursor=''
 while True:
     scan=send(action='maintenance-scan',source='maintenance',runId=run,cursor=cursor)
     assert send(action='maintenance-scan',source='maintenance',runId=run,cursor=cursor)==scan
     if scan['complete']:break
     cursor=scan['cursor']
+assert scan['accountedBytes']==scan['archiveBytes']+1234 and scan['unresolvedWrites']==1 and not scan['exact']
+assert sql("SELECT bytes FROM storage_usage WHERE id='r2'")[0]['bytes']==scan['accountedBytes']<8_000_000_000
 assert scan['scannedObjects']>0 and scan['archiveBytes']>0 and scan['deletedObjects']==0
 send(action='check-finish',source='maintenance',runId=run,outcome='updated')
 start('cv')
 assert send(action='begin',id=gen,hash=gen*4,**{**manifest,'bytes':1000})['state']=='staging'
 assert sql("SELECT generation FROM source_state WHERE id='cv'")[0]['generation']=='5555555555555555'
 assert sql("SELECT id FROM versions WHERE productId='CA:123' ORDER BY id")==history_before
+# Same immutable upload retries charge capacity once, including concurrent requests.
+raw=b'idempotent archive';digest=hashlib.sha256(raw).hexdigest()
+def chunk():
+    request=urllib.request.Request(base+'/api/import?sourceHash='+digest+'&chunk=0',data=raw,headers={'Authorization':'Bearer '+token,'x-content-sha256':digest,'x-import-source':'cv','x-import-protocol':'2','x-import-run':checks['cv'].run_id,'x-import-epoch':str(checks['cv'].lease_epoch)})
+    with urllib.request.urlopen(request) as response:return json.load(response)
+before=sql("SELECT bytes FROM storage_usage WHERE id='r2'")[0]['bytes']
+with ThreadPoolExecutor(max_workers=2) as pool:assert all(r['accepted'] for r in pool.map(lambda _:chunk(),range(2)))
+chunk()
+assert sql("SELECT bytes FROM storage_usage WHERE id='r2'")[0]['bytes']==before+len(raw)
+assert sql(f"SELECT inFlight,state FROM archive_writes WHERE hash='{digest}'")==[{'inFlight':0,'state':'verified'}]
 # A full archive meter must prevent new writes even though the bucket remains readable.
-sql("UPDATE cache SET value='{\"bytes\":8000000000}' WHERE key='storage:r2'")
+sql("UPDATE storage_usage SET bytes=8000000000 WHERE id='r2'")
 raw=b'bounded capacity fixture';digest=hashlib.sha256(raw).hexdigest()
 request=urllib.request.Request(base+'/api/import?sourceHash='+digest+'&chunk=0',data=raw,headers={'Authorization':'Bearer '+token,'x-content-sha256':digest,'x-import-source':'cv','x-import-protocol':'2','x-import-run':checks['cv'].run_id,'x-import-epoch':str(checks['cv'].lease_epoch)})
 try:

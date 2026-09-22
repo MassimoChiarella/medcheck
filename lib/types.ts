@@ -5,6 +5,7 @@ export type Product = {
   id: string; name: string; genericName: string; market: Market;
   manufacturer: string; strength: string; form: string; route: string;
   identifiers: { ndc?: string; din?: string; setid?: string; drugCode?: number; rxcui?: string };
+  persistence?: 'archived' | 'unavailable';
   currentPresence?: 'present' | 'absent' | 'unknown';
   ingredients: Ingredient[]; sourceUrl: string; status?: string; dataStatus?: Completeness; observedAt?: string;
 };
@@ -13,7 +14,7 @@ export type ProductVersion = {
   effectiveAt?: string; sourceUpdatedAt?: string; observedAt?: string; sourceUrl: string;
   active?: Ingredient[]; inactive?: Ingredient[]; form?: string; route?: string;
   sections?: Record<string, string>; completeness: Completeness;
-  contentHash?: string; notes?: string[];
+  contentHash?: string; archiveKey?: string; archiveHash?: string; archiveStatus?: 'verified' | 'unavailable' | 'legacy'; notes?: string[];
 };
 export type Change = {
   category: 'active ingredients' | 'inactive ingredients' | 'safety wording' | 'packaging / administrative' | 'form / route';

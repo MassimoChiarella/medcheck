@@ -57,6 +57,20 @@
       "when": 1790053816430,
       "tag": "0007_dry_loa",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790054198686,
+      "tag": "0008_orange_risque",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790054918275,
+      "tag": "0009_slippery_cloak",
+      "breakpoints": true
     }
   ]
 }

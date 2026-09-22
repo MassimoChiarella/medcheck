@@ -28,3 +28,12 @@ export const labelRefresh = sqliteTable('label_refresh', {
 }, t=>[index('label_refresh_pending').on(t.cycle,t.state,t.nextAttempt)]);
 
 export const mutationGuards = sqliteTable('mutation_guards', { id: text().primaryKey(), valid: integer().notNull() }, t => [check('mutation_guard_valid', sql`${t.valid}=1`)]);
+
+// Durable storage accounting is not an evictable response cache.
+export const storageUsage = sqliteTable('storage_usage', { id:text().primaryKey(), bytes:integer().notNull().default(0), initialized:integer().notNull().default(0), updated:text().notNull() });
+export const archiveWrites = sqliteTable('archive_writes', {
+  key:text().primaryKey(), hash:text().notNull(), bytes:integer().notNull(), state:text().notNull(),
+  writeId:text().notNull(), inFlight:integer().notNull().default(0), created:text().notNull(), updated:text().notNull(), seenScan:text(),
+},t=>[index('archive_scan').on(t.seenScan)]);
+
+export const archiveAttempts = sqliteTable('archive_attempts', { id:text().primaryKey(), key:text().notNull(), kind:text().notNull(), registryId:text().notNull(), hash:text().notNull(), bytes:integer().notNull(), created:text().notNull() },t=>[index('archive_attempt_key').on(t.key)]);

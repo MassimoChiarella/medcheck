@@ -8,7 +8,8 @@ This ledger distinguishes implemented fixes from verified release checks. The de
 | --- | --- | --- | --- |
 | Import ownership and transactional fencing | A01 | Implemented; local regression verified | Protocol v2, epoch ownership, guarded D1 batches, immutable R2 writes, manifest-checked adoption; isolated Worker takeover, source isolation, stale publication and rollback checks pass |
 | Durable identity and history | A02/A18 | Implemented; local regression verified | Durable identity, saved-version/history fallback, numeric SPL chronology and API reversal rejection |
-| Archives, reservations and capacity | A11–A14 | Not started | — |
+| Archive publication and reservations | A11/A12 | Implemented; local regression verified | Immutable bytes, operation-owned acknowledgements, atomic scan checkpoints, bounded legacy-reference repair |
+| Database growth and full capacity qualification | A13/A14 | In progress | Shared D1 growth policy and cache retention are next; hosted full-size qualification remains gated |
 | Search and evidence correctness | A03–A10 | Not started | — |
 | Query batching and bounded reuse | A24 | Not started | — |
 | Research state and bookmarks | A15/A19/A20/A22 | Not started | — |
@@ -31,3 +32,15 @@ Validation: typecheck, lint, 21 Node tests, 17 Python tests, and the disposable 
 Stored identity now resolves independently of the current label cache. Refresh explicitly reports present, absent or unknown current-label presence; a missing current product cannot block its history. Published history failures expose the bounded set of previously inspected versions as partial coverage. Stored versions remain directly readable. US versions sort numerically within their SPL; Canadian snapshots sort by observation time. Reversed comparisons are rejected, equal API selections require a different version, and unknown order cannot produce directional conclusions.
 
 Validation: typecheck/lint and adapter/unit checks for expired identity, removal from the latest SPL, source outage, retained versions, numeric version 2/8/10 ordering and reversed comparisons. Physical UI verification remains in the release gate.
+
+## Milestone 3 — Recoverable archive publication
+
+Each immutable object has a durable expected hash/byte reservation and each remote operation has a random attempt ID. A completed operation may acknowledge only its own key, registry identity, hash and byte count, independently of an expired source-publication lease. This narrow terminal path cannot modify products, versions, imports or source freshness. It is needed because storage may complete after a lease expires. Ambiguous operations keep their reservation and prevent deletion; a successful retry does not pretend to resolve an earlier uncertain attempt. Confirmed nondispatch settles its marker and a bounded scan can reclaim an absent object. Delete tombstones prevent key reuse until the actual delete completes.
+
+R2 scans checkpoint page markers and byte totals atomically. A second bounded registry pass accounts for objects created after the listing passed their key, and retains unresolved bytes. Completed scans replace the legacy anonymous meter; interrupted scans cannot publish a partial total. Normal maintenance may conservatively overcount a deletion completed after its page was read; the next complete scan reconciles it.
+
+Canadian live observations archive exact payload bytes before coherently publishing product/version data. Product-change and payload hashes are separate. Storage failures return readable current source data with an explicit persistence limitation and are retried; they do not publish a completed history occurrence. DPD batch versions also carry exact archive references. Archived SPLs can rehydrate parsed labels without upstream access; R2 outages can fall through to a healthy upstream.
+
+`python3 scripts/maintain_storage.py --repair-archives` adds bounded legacy catalogue and version-reference reconciliation. It verifies source/product hashes and does not substitute newly downloaded bytes for missing historical evidence. Unresolved legacy references remain explicitly unverified.
+
+Validation: typecheck/lint; adapter tests with SQLite transaction and R2 fault fixtures; normal unit suite; isolated Worker integration. Scenarios include expired-owner late PUT/DELETE completion, duplicate acknowledgements, uncertain-plus-successful retry, nondispatch, interrupted scan checkpoint, legacy bulk-reference backfill, R2 failure/upstream recovery, archive rehydration, Canadian retry-before-publication, concurrent identical chunks, conservative uncertain reservations and lowering the old inflated meter. Full hosted size/CPU qualification remains pending.

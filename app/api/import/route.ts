@@ -5,7 +5,7 @@ import { checkAction, UpdateConflict, noMaintenance } from '@/lib/updates';
 import { refreshAction } from '@/lib/refresh';
 import { maintenanceAction, protectedImports } from '@/lib/maintenance';
 import { currentFence, withFence, parseFence, assertLease, IMPORT_PROTOCOL } from '@/lib/database';
-import { capacity, estimatedImportBytes, writeCapacity, putArchive } from '@/lib/storage';
+import { capacity, estimatedImportBytes, writeCapacity, putArchive, archiveAccounting } from '@/lib/storage';
 
 // Fixed source tables only. The upload API never accepts SQL or arbitrary identifiers.
 const tables:Record<string,string[]>={
@@ -56,7 +56,7 @@ export async function POST(request:Request){
 }
 async function handle(b:Record<string,any>){
     const action=b.action;
-    if(action==='capacity')return Response.json(await capacity());
+    if(action==='capacity')return Response.json({...await capacity(),archives:await archiveAccounting()});
     const check=await checkAction(b);if(check)return check;
     const maintenance=await maintenanceAction(b);if(maintenance)return maintenance;
     const refresh=await refreshAction(b);if(refresh)return refresh;
@@ -86,14 +86,14 @@ async function handle(b:Record<string,any>){
       if(action==='dpd'){
         await writeCapacity();
         if(!Array.isArray(b.entries)||!b.entries.length||b.entries.length>400)throw new Error('Invalid Canadian product snapshot batch.');
+        const raw=JSON.stringify(b.entries),digest=await hash(raw),archiveKey=`canada/catalogue/${b.id}/${digest}.json`;
         const rows=[];
         for(const entry of b.entries){const p=entry.product;if(!p||!/^CA:\d+$/.test(p.id)||p.market!=='CA'||typeof p.name!=='string'||!Array.isArray(p.ingredients)||!String(p.sourceUrl).startsWith('https://health-products.canada.ca/dpd-bdpp/'))throw new Error('Invalid Canadian product record.');
           const data=JSON.stringify(p),digest=await hash(data),version=run.created;
-          const v={id:`${p.id}@${version}`,productId:p.id,version,observedAt:version,sourceUpdatedAt:entry.sourceUpdatedAt,active:p.ingredients,form:p.form,route:p.route,sourceUrl:p.sourceUrl,contentHash:digest,completeness:'partial',notes:['Observed Canadian product snapshot. Source update dates are not formulation effective dates. Inactive ingredients and historical label text are unavailable from this API.']};
+          const v={id:`${p.id}@${version}`,productId:p.id,version,observedAt:version,sourceUpdatedAt:entry.sourceUpdatedAt,active:p.ingredients,form:p.form,route:p.route,sourceUrl:p.sourceUrl,contentHash:digest,archiveKey,archiveHash:await hash(raw),archiveStatus:'verified',completeness:'partial',notes:['Observed Canadian product snapshot. Source update dates are not formulation effective dates. Inactive ingredients and historical label text are unavailable from this API.']};
           rows.push([p.id,data,digest,JSON.stringify(v)]);
         }
-        const raw=JSON.stringify(b.entries),digest=await hash(raw);
-        await putArchive(`canada/catalogue/${b.id}/${digest}.json`,raw,{httpMetadata:{contentType:'application/json'},customMetadata:{observedAt:run.created,sha256:digest}});
+        await putArchive(archiveKey,raw,{httpMetadata:{contentType:'application/json'},customMetadata:{observedAt:run.created,sha256:digest}});
         await db().batch([
           db().prepare("INSERT INTO dpd_staging(gen,id,data,hash,versionData) SELECT ?,json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?) WHERE true ON CONFLICT(gen,id) DO UPDATE SET data=excluded.data,hash=excluded.hash,versionData=excluded.versionData").bind(b.id,JSON.stringify(rows)),
           db().prepare("UPDATE imports SET touched=? WHERE id=? AND state='staging'").bind(now(),b.id),

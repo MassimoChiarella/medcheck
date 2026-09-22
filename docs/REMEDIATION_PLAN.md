@@ -1,6 +1,6 @@
 # MedCheck audit remediation development plan
 
-Status: **ready for implementation; implementation has not started**. Date: 2026-09-22.
+Status: **implementation in progress**. Execution evidence and milestone status: [validation ledger](REMEDIATION_VALIDATION.md). Date: 2026-09-22.
 
 Authority: [technical specification](REMEDIATION_SPEC.md), [completed audit](../audit/2026-09-22/README.md), audit commit `1042011`. This plan supersedes earlier roadmap ordering for audit remediation; [UPDATE_PLAN.md](../UPDATE_PLAN.md) remains the historical record of previously delivered update work. Its checked boxes do not close the new audit findings.
 
