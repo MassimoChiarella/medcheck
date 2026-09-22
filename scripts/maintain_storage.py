@@ -3,7 +3,7 @@ import argparse,json,os,time
 from import_canada import post,validate_target
 from update_run import SourceCheck
 
-def maintain(base,token,apply=False,repair=False):
+def maintain(base,token,apply=False,repair=False,search=False):
     deadline=time.monotonic()+1800
     deleted_rows=0
     with SourceCheck('maintenance',base,token,post) as check:
@@ -25,6 +25,13 @@ def maintain(base,token,apply=False,repair=False):
                         if result['done']:break
             if not plan['hasMore']:break
             after=plan['cursor']
+        if search:
+            for table in ['products','cv_products','dpd_staging']:
+                search_cursor=0
+                while True:
+                    indexed=request('maintenance-search-text',table=table,after=search_cursor)
+                    if indexed['complete']:break
+                    search_cursor=indexed['cursor']
         if repair:
             archive_cursor=''
             while True:
@@ -52,8 +59,9 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply',action='store_true',help='Delete eligible staging work; the default only audits.')
     parser.add_argument('--repair-archives',action='store_true',help='Verify stored version archive references in bounded pages; unavailable historical bytes stay unavailable.')
+    parser.add_argument('--repair-search',action='store_true',help='Resume bounded Unicode name normalization for legacy records.')
     args=parser.parse_args()
     base=validate_target(os.getenv('MEDCHECK_URL',''),os.getenv('MEDCHECK_IMPORT_TOKEN',''))
-    maintain(base,os.environ['MEDCHECK_IMPORT_TOKEN'],args.apply,args.repair_archives)
+    maintain(base,os.environ['MEDCHECK_IMPORT_TOKEN'],args.apply,args.repair_archives,args.repair_search)
 
 if __name__=='__main__':main()

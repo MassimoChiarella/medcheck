@@ -12,7 +12,8 @@ This ledger distinguishes implemented fixes from verified release checks. The de
 | Database growth and cache policy | A13 | Implemented; local regression verified | Atomic capacity reservations include concurrent interactive/import writes; bounded cache retention protects history |
 | Full capacity qualification | A14 | Pending external qualification | Actual free Sites allocation and an isolated full-data target are not established; no limit was relaxed |
 | Exact product search and input contracts | A03/A05/X04/X05 | Implemented; local regression verified | Product/package NDC filtering, validation before source access, human-product suggestions |
-| Canadian names and evidence correctness | A04/A06–A10 | In progress | — |
+| Literal Canadian name search | A04 | Implemented; local regression verified | Derived Unicode-normalized text and bounded backfill |
+| Evidence correctness | A06–A10 | In progress | — |
 | Query batching and bounded reuse | A24 | Not started | — |
 | Research state and bookmarks | A15/A19/A20/A22 | Not started | — |
 | Navigation, accessibility and printing | A16/A17/A21/A23 | Not started | — |
@@ -66,3 +67,13 @@ DailyMed searches now retain the requested product or package NDC after expandin
 Spelling suggestions require a verified human product in the selected market. An empty page with more source pages offers continued browsing rather than a misleading spelling suggestion.
 
 Validation: typecheck/lint, 44 Node tests and 17 Python tests. New fixtures cover product/package NDCs, other strengths within the same SPL, veterinary suggestions and invalid route inputs with zero database/network access. Browser verification remains in the combined release gate.
+
+## Milestone 6 — Canadian name search and cache upgrade
+
+Product, spelling and report-dictionary searches use literal `instr` matching over separately derived NFKC/uppercase text. This avoids SQLite's LIKE pattern bound, preserves percent/underscore characters and removes the six-name candidate cutoff. All source terms are passed as one bounded JSON parameter. Derived fields never change authoritative product/archive hashes. The server derives CV text from the unchanged three-field source rows, so source transforms, upload hashes and idempotent retries remain compatible.
+
+Migration 0011 adds empty derived fields. New writes fill them immediately; `python3 scripts/maintain_storage.py --repair-search` resumes legacy backfill using keyset pages and one guarded bulk update per page. Until it completes, fallback searches explicitly disclose incomplete Unicode normalization. No new substring index was added without a measured benefit.
+
+Follow-up review also versioned the parsed SPL cache, allowing existing installations to retrieve package metadata immediately. A verified fresh human label can support a spelling suggestion even if a sibling label fails. API prefixes must use canonical US/CA casing. NDC searches explicitly describe supported published/dehyphenated codes and the limitation for zero-padded billing identifiers.
+
+Validation: typecheck/lint; 47 Node and 17 Python tests; disposable Worker import/migration suite. New real SQLite cases cover >50-byte Unicode names, NFKC, literal `%_`, 105-row interrupted/resumed backfill, unchanged source JSON, and a ninth ingredient matching the Canadian dictionary. Full-catalogue query measurements remain in G6; existing hosted records require the bounded maintenance upgrade before qualification.

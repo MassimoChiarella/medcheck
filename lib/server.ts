@@ -1,3 +1,4 @@
+import { productSearchText, searchBackfillNote } from './search-text';
 /* oxlint-disable typescript/no-explicit-any -- Official sources have heterogeneous records; mappings explicitly normalize the fields used. */
 import { versionOrder } from './history-order';
 import { env } from 'cloudflare:workers';
@@ -54,7 +55,7 @@ export async function jsonSource(source:string,base:string,params:Record<string,
 }
 export function result<T>(data:T,notes:string[]=[],complete:Result<T>['completeness']='complete'):Result<T>{return {data,notes,completeness:complete,fetchedAt:now()};}
 export const labelLink=(id:string)=>`https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${id}`;
-export async function saveProduct(p:Product){await db().prepare('INSERT INTO products(id,data,observed) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed').bind(p.id,JSON.stringify(p),now()).run();}
+export async function saveProduct(p:Product){await db().prepare('INSERT INTO products(id,data,observed,searchText) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed,searchText=excluded.searchText').bind(p.id,JSON.stringify(p),now(),productSearchText(p)).run();}
 export async function saveVersion(v:ProductVersion){await db().prepare('INSERT INTO versions(id,productId,version,data,hash,observed) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,hash=excluded.hash').bind(v.id,v.productId,v.version,JSON.stringify(v),v.contentHash||null,v.observedAt||now()).run();}
 export const splCacheKey=(setid:string,version?:string)=>`spl:${setid}:${version||'current'}:parser2`;
 export async function loadLabel(setid:string,version?:string,force=false){
@@ -76,7 +77,7 @@ export async function loadLabel(setid:string,version?:string,force=false){
       if(!archivedKey)await putArchive(archiveKey,bytes,{httpMetadata:{contentType:zipped?'application/zip':'application/xml'},customMetadata:{source:url.toString(),fetchedAt:observedAt,sha256:contentHash}});
       for(const v of parsed.versions){v.contentHash=contentHash;v.observedAt=observedAt;v.archiveKey=archiveKey;v.archiveHash=contentHash;v.archiveStatus='verified';}
       const writes=parsed.versions.map(v=>db().prepare('INSERT INTO versions(id,productId,version,data,hash,observed) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,hash=excluded.hash').bind(v.id,v.productId,v.version,JSON.stringify(v),contentHash,observedAt));
-      if(!version)writes.push(...parsed.products.map(p=>db().prepare('INSERT INTO products(id,data,observed) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed').bind(p.id,JSON.stringify(p),observedAt)));
+      if(!version)writes.push(...parsed.products.map(p=>db().prepare('INSERT INTO products(id,data,observed,searchText) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed,searchText=excluded.searchText').bind(p.id,JSON.stringify(p),observedAt,productSearchText(p))));
       if(writes.length)await db().batch(writes);
     }catch(error){
       if(error instanceof LeaseConflict||force)throw error;
@@ -93,9 +94,11 @@ export async function searchUS(query:string,page:number):Promise<Result<Product[
   const listing=await jsonSource('dailymed','https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json',params);
   const entries=arr<Record<string,string>>(listing.value.data);const output:Product[]=[];const notes:string[]=[];
   // ponytail: three concurrent labels per batch; avoid a separate job queue for interactive lookup.
-  for(let i=0;i<entries.length;i+=3){const settled=await Promise.allSettled(entries.slice(i,i+3).map(e=>loadLabel(e.setid)));settled.forEach((r,j)=>{if(r.status==='fulfilled'){for(const p of r.value.value.products)if(!isNdcQuery(query)||matchesNdc(p,query))output.push(p);if(r.value.stale)notes.push('A saved label is shown because the latest source request failed.');}else notes.push(`One matching label could not be loaded: ${entries[i+j].title||'label'}.`);});}
+  for(let i=0;i<entries.length;i+=3){const settled=await Promise.allSettled(entries.slice(i,i+3).map(e=>loadLabel(e.setid)));settled.forEach((r,j)=>{if(r.status==='fulfilled'){for(const p of r.value.value.products)if(!isNdcQuery(query)||matchesNdc(p,query))output.push({...p,dataStatus:r.value.stale?'stale':'complete',observedAt:r.value.fetched});if(r.value.stale)notes.push('A saved label is shown because the latest source request failed.');}else notes.push(`One matching label could not be loaded: ${entries[i+j].title||'label'}.`);});}
   if(listing.stale)notes.push('Search results are from a previous successful source request.');
-  return {...result(output,notes,notes.length?'partial':'complete'),fetchedAt:listing.fetched,page,hasMore:Number(listing.value.metadata?.total_pages)>page};
+  const availability=notes.length?'partial':'complete';
+  if(isNdcQuery(query))notes.push('NDC matching uses the published product or package code, with optional removal of hyphens. Zero-padded billing identifiers may require the original published NDC.');
+  return {...result(output,notes,availability),fetchedAt:listing.fetched,page,hasMore:Number(listing.value.metadata?.total_pages)>page};
 }
 async function caEndpoint(name:string,params:Record<string,string|number>){return jsonSource('dpd',`https://health-products.canada.ca/api/drug/${name}/`,{...params,lang:'en',type:'json'});}
 export async function suggestMedication(query:string,market:'US'|'CA'):Promise<Result<string|null>>{
@@ -107,10 +110,10 @@ export async function suggestMedication(query:string,market:'US'|'CA'):Promise<R
     // Check the selected market before offering a spelling; never switch countries automatically.
     if(market==='US'){
       const verified=await searchUS(name,1);
+      if(verified.data.some(p=>p.dataStatus==='complete'))return {...result(name),fetchedAt:terms.fetched};
       if(verified.completeness!=='complete')throw new Error('Spelling suggestions could not be verified.');
-      if(verified.data.some(p=>p.dataStatus!=='stale'))return {...result(name),fetchedAt:terms.fetched};
     }else{
-      const indexed=await db().prepare("SELECT id FROM products WHERE id LIKE 'CA:%' AND (json_extract(data,'$.name') LIKE ? OR json_extract(data,'$.genericName') LIKE ?) LIMIT 1").bind('%'+name+'%','%'+name+'%').first();
+      const indexed=await db().prepare("SELECT id FROM products WHERE id LIKE 'CA:%' AND instr(CASE WHEN searchText='' THEN upper(json_extract(data,'$.name')||char(10)||json_extract(data,'$.genericName')) ELSE searchText END,?)>0 LIMIT 1").bind(normalize(name)).first();
       if(indexed)return {...result(name),fetchedAt:terms.fetched};
       const brands=await caEndpoint('drugproduct',{brandname:name});
       if(brands.stale)throw new Error('Spelling suggestions could not be verified.');
@@ -141,7 +144,7 @@ async function liveCaProduct(code:number):Promise<Product>{
         SELECT 1 FROM versions WHERE id=(SELECT id FROM versions WHERE productId=? ORDER BY observed DESC,id DESC LIMIT 1)
         AND hash=? AND json_extract(data,'$.archiveStatus')='verified' AND id IS NOT ?) ON CONFLICT(id) DO NOTHING`)
         .bind(v.id,v.productId,v.version,JSON.stringify(v),contentHash,stamp,product.id,contentHash,missingId),
-      db().prepare('INSERT INTO products(id,data,observed) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed WHERE julianday(excluded.observed)>=julianday(products.observed)').bind(product.id,JSON.stringify(product),stamp),
+      db().prepare('INSERT INTO products(id,data,observed,searchText) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed,searchText=excluded.searchText WHERE julianday(excluded.observed)>=julianday(products.observed)').bind(product.id,JSON.stringify(product),stamp,productSearchText(product)),
     ]);
     return {...product,observedAt:stamp,persistence:'archived'};
   }catch(error){if(error instanceof LeaseConflict)throw error;return {...product,observedAt:stamp,persistence:'unavailable',dataStatus:'partial'};}
@@ -212,12 +215,13 @@ export async function caProduct(code:number):Promise<Product>{
 }
 export async function searchCA(query:string,page:number):Promise<Result<Product[]>>{
   try{return await liveSearchCA(query,page);}catch(error){
-    const needle='%'+query.replace(/[%_]/g,'')+'%';
-    const sql="FROM products WHERE id LIKE 'CA:%' AND (json_extract(data,'$.name') LIKE ? OR json_extract(data,'$.genericName') LIKE ? OR json_extract(data,'$.identifiers.din')=?)";
-    const count=await db().prepare('SELECT COUNT(*) AS n '+sql).bind(needle,needle,query).first<{n:number}>();
+    const needle=normalize(query);
+    const sql="FROM products WHERE id LIKE 'CA:%' AND (instr(CASE WHEN searchText='' THEN upper(json_extract(data,'$.name')||char(10)||json_extract(data,'$.genericName')) ELSE searchText END,?)>0 OR json_extract(data,'$.identifiers.din')=?)";
+    const count=await db().prepare('SELECT COUNT(*) AS n '+sql).bind(needle,query).first<{n:number}>();
     const state=await db().prepare("SELECT lastSuccess,coverage FROM source_state WHERE id='dpd'").first<{lastSuccess:string;coverage:string}>();
     if(!state?.lastSuccess)throw error;
-    const rows=await db().prepare('SELECT data '+sql+` ORDER BY json_extract(data,'$.name'),id LIMIT 8 OFFSET ?`).bind(needle,needle,query,(page-1)*8).all<{data:string}>();
-    return {...result(rows.results.map(r=>JSON.parse(r.data)),['The live Canadian service could not be reached. Showing the last successfully imported product snapshot.'],'stale'),fetchedAt:state.lastSuccess,sourceAsOf:state.coverage,total:count?.n||0,page,hasMore:page*8<(count?.n||0)};
+    const pending=await db().prepare("SELECT 1 FROM products WHERE id LIKE 'CA:%' AND searchText='' LIMIT 1").first();
+    const rows=await db().prepare('SELECT data '+sql+` ORDER BY json_extract(data,'$.name'),id LIMIT 8 OFFSET ?`).bind(needle,query,(page-1)*8).all<{data:string}>();
+    return {...result(rows.results.map(r=>JSON.parse(r.data)),['The live Canadian service could not be reached. Showing the last successfully imported product snapshot.',...(pending?[searchBackfillNote]:[])],'stale'),fetchedAt:state.lastSuccess,sourceAsOf:state.coverage,total:count?.n||0,page,hasMore:page*8<(count?.n||0)};
   }
 }

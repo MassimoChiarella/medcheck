@@ -1,3 +1,4 @@
+import { productSearchText, dictionarySearchText } from '@/lib/search-text';
 /* oxlint-disable typescript/no-explicit-any -- Authenticated import payloads are validated per action before fixed-schema mutations. */
 import { env } from 'cloudflare:workers';
 import { db, hash, now } from '@/lib/server';
@@ -91,11 +92,11 @@ async function handle(b:Record<string,any>){
         for(const entry of b.entries){const p=entry.product;if(!p||!/^CA:\d+$/.test(p.id)||p.market!=='CA'||typeof p.name!=='string'||!Array.isArray(p.ingredients)||!String(p.sourceUrl).startsWith('https://health-products.canada.ca/dpd-bdpp/'))throw new Error('Invalid Canadian product record.');
           const data=JSON.stringify(p),digest=await hash(data),version=run.created;
           const v={id:`${p.id}@${version}`,productId:p.id,version,observedAt:version,sourceUpdatedAt:entry.sourceUpdatedAt,active:p.ingredients,form:p.form,route:p.route,sourceUrl:p.sourceUrl,contentHash:digest,archiveKey,archiveHash:await hash(raw),archiveStatus:'verified',completeness:'partial',notes:['Observed Canadian product snapshot. Source update dates are not formulation effective dates. Inactive ingredients and historical label text are unavailable from this API.']};
-          rows.push([p.id,data,digest,JSON.stringify(v)]);
+          rows.push([p.id,data,digest,JSON.stringify(v),productSearchText(p)]);
         }
         await putArchive(archiveKey,raw,{httpMetadata:{contentType:'application/json'},customMetadata:{observedAt:run.created,sha256:digest}});
         await db().batch([
-          db().prepare("INSERT INTO dpd_staging(gen,id,data,hash,versionData) SELECT ?,json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]') FROM json_each(?) WHERE true ON CONFLICT(gen,id) DO UPDATE SET data=excluded.data,hash=excluded.hash,versionData=excluded.versionData").bind(b.id,JSON.stringify(rows)),
+          db().prepare("INSERT INTO dpd_staging(gen,id,data,hash,versionData,searchText) SELECT ?,json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]'),json_extract(value,'$[4]') FROM json_each(?) WHERE true ON CONFLICT(gen,id) DO UPDATE SET data=excluded.data,hash=excluded.hash,versionData=excluded.versionData,searchText=excluded.searchText").bind(b.id,JSON.stringify(rows)),
           db().prepare("UPDATE imports SET touched=? WHERE id=? AND state='staging'").bind(now(),b.id),
         ]);return Response.json({accepted:rows.length});
       }
@@ -103,7 +104,7 @@ async function handle(b:Record<string,any>){
       const count=await db().prepare('SELECT COUNT(*) AS n FROM dpd_staging WHERE gen=?').bind(b.id).first<{n:number}>();if(count?.n!==JSON.parse(run.manifest).count)throw new Error('Catalogue is incomplete. Previous snapshot retained.');
       await db().batch([
         db().prepare("INSERT INTO versions(id,productId,version,data,hash,observed) SELECT json_extract(s.versionData,'$.id'),s.id,?,s.versionData,s.hash,? FROM dpd_staging s WHERE s.gen=? AND s.hash IS NOT (SELECT hash FROM versions v WHERE v.productId=s.id ORDER BY observed DESC LIMIT 1) ON CONFLICT(id) DO NOTHING").bind(run.created,run.created,b.id),
-        db().prepare("INSERT INTO products(id,data,observed) SELECT id,data,? FROM dpd_staging WHERE gen=? ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed WHERE julianday(excluded.observed)>=julianday(products.observed)").bind(run.created,b.id),
+        db().prepare("INSERT INTO products(id,data,observed,searchText) SELECT id,data,?,searchText FROM dpd_staging WHERE gen=? ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed=excluded.observed,searchText=excluded.searchText WHERE julianday(excluded.observed)>=julianday(products.observed)").bind(run.created,b.id),
         db().prepare("UPDATE imports SET state='retired' WHERE source='dpd' AND state='active' AND julianday(created)<=julianday(?)").bind(run.created),
         db().prepare("UPDATE imports SET reservedBytes=0,state=CASE WHEN EXISTS(SELECT 1 FROM imports WHERE source='dpd' AND state='active' AND julianday(created)>julianday(?)) THEN 'retired' ELSE 'active' END,completed=? WHERE id=?").bind(run.created,now(),b.id),
         db().prepare("INSERT INTO source_state(id,generation,lastSuccess,lastChecked,error,coverage) VALUES('dpd',?,?,?,NULL,?) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation,lastSuccess=excluded.lastSuccess,lastChecked=excluded.lastChecked,error=NULL,coverage=excluded.coverage WHERE julianday(excluded.lastSuccess)>=julianday(source_state.lastSuccess)").bind(b.id,run.created,now(),run.cutoff),
@@ -145,8 +146,9 @@ async function handle(b:Record<string,any>){
       if(b.rows.some((r:(string|number|null)[])=>!Number.isSafeInteger(r[0])||Number(r[0])<0||r.some(x=>typeof x==='string'&&x.length>100_000)))throw new Error('Invalid source row identifiers or field lengths.');
       const serialized=JSON.stringify(b.rows),digest=await hash(serialized);const existing=await db().prepare('SELECT hash FROM import_batches WHERE importId=? AND tableName=? AND batchId=?').bind(id,b.table,b.batch).first<{hash:string}>();if(existing){if(existing.hash!==digest)throw new Error('Batch content conflict.');return Response.json({accepted:true,replayed:true});}
       const expected=JSON.parse(run.manifest)[b.table];const count=await db().prepare('SELECT COALESCE(SUM(rows),0) AS n,COALESCE(MAX(batchId),-1) AS last FROM import_batches WHERE importId=? AND tableName=?').bind(id,b.table).first<{n:number;last:number}>();if(b.batch!==(count?.last??-1)+1||(count?.n||0)+b.rows.length>expected)throw new Error('Batches must be sequential and match the manifest.');
+      const storedFields=b.table==='cv_products'?[...fields,'searchText']:fields,storedRows=b.table==='cv_products'?JSON.stringify(b.rows.map((row:any[])=>[...row,dictionarySearchText(row[1],row[2])])):serialized;
       await db().batch([
-        db().prepare(`INSERT INTO ${b.table}(gen,${fields.map(f=>'"'+f+'"').join(',')}) SELECT ?,${fields.map((_,i)=>`json_extract(value,'$[${i}]')`).join(',')} FROM json_each(?)`).bind(id,serialized),
+        db().prepare(`INSERT INTO ${b.table}(gen,${storedFields.map(f=>'"'+f+'"').join(',')}) SELECT ?,${storedFields.map((_,i)=>`json_extract(value,'$[${i}]')`).join(',')} FROM json_each(?)`).bind(id,storedRows),
         db().prepare('INSERT INTO import_batches(importId,tableName,batchId,rows,hash) VALUES(?,?,?,?,?)').bind(id,b.table,b.batch,b.rows.length,digest),
         db().prepare("UPDATE imports SET touched=? WHERE id=? AND state='staging'").bind(now(),id),
       ]);

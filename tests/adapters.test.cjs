@@ -165,3 +165,22 @@ test('legacy parsed labels cannot mask package NDC metadata after upgrade',async
   let fetched=0;const h=harness((sql,args)=>sql==='SELECT value,fetched FROM cache WHERE key=?'&&args[0]==='spl:7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6:current'?{value:JSON.stringify({products:[]}),fetched:Date.now()}:sql.startsWith('INSERT INTO source_budget')?{count:1}:null,async()=>{fetched++;return new Response(fixture);});
   const label=await h.load('server').loadLabel('7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6');assert.equal(fetched,1);assert.ok(label.value.products[0].identifiers.packageNdcs.length);
 });
+test('long literal Unicode Canadian names survive bounded legacy backfill and dictionary lookup',async()=>{
+  const f=storageFixture(),stamp='2026-09-01T00:00:00Z',name='Crème K Québec %_ '+ 'é'.repeat(40),p={id:'CA:942',name,genericName:'Unique ingredient',market:'CA',ingredients:[],identifiers:{din:'00000942'},sourceUrl:'https://health-products.canada.ca/dpd-bdpp/info?code=942'};
+  const insert=f.sqlite.prepare('INSERT INTO products(id,data,observed) VALUES(?,?,?)');insert.run(p.id,JSON.stringify(p),stamp);for(let i=0;i<104;i++)insert.run('CA:'+String(1000+i),JSON.stringify({...p,id:'CA:'+String(1000+i),name:'Other '+i}),stamp);
+  f.sqlite.prepare('INSERT INTO cv_products(gen,id,name,ingredients) VALUES(?,?,?,?)').run('generation',1,name,'[]');
+  f.sqlite.prepare('INSERT INTO source_state(id,generation,coverage,lastSuccess) VALUES(?,?,?,?)').run('cv','generation','2026-08-01',stamp);
+  const owner=lease(f,'maintenance'),fence=f.load('database'),maintenance=f.load('maintenance');
+  const repair=table=>fence.withFence(owner,()=>maintenance.maintenanceAction({action:'maintenance-search-text',table,...owner})).then(r=>r.json());
+  assert.equal((await repair('products')).complete,false);assert.equal((await repair('products')).complete,true);assert.equal((await repair('products')).updated,0);await repair('cv_products');
+  assert.equal(f.sqlite.prepare('SELECT data FROM products WHERE id=?').get(p.id).data,JSON.stringify(p));
+  const needle=f.load('search-text').normalize(name);assert.equal(f.sqlite.prepare('SELECT id FROM products WHERE instr(searchText,?)>0').all(needle).length,1);assert.match(needle,/CRÈME K QUÉBEC %_/);
+  const found=await f.load('evidence').caReports([p],{source:'CA',page:1});assert.equal(found.candidates.length,1);assert.equal(found.candidates[0].name,name);
+  const many={...p,name:'no match',genericName:'missing',ingredients:Array.from({length:9},(_,i)=>({name:i===8?name:'NO '+i}))};
+  const ninth=await f.load('evidence').caReports([many],{source:'CA',page:1});assert.equal(ninth.candidates.length,1);
+  f.sqlite.close();
+});
+test('a fresh human label verifies spelling even when a sibling label fails',async()=>{
+  const h=harness(sql=>sql.startsWith('INSERT INTO source_budget')?{count:1}:null,async url=>url.hostname==='rxnav.nlm.nih.gov'?new Response(JSON.stringify({suggestionGroup:{suggestionList:{suggestion:['sertraline']}}})):url.pathname.includes('00000000')?new Response('missing',{status:404}):url.pathname.endsWith('.xml')?new Response(fixture):new Response(JSON.stringify({data:[{setid:'7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6'},{setid:'00000000-0000-0000-0000-000000000000'}],metadata:{total_pages:1}})));
+  assert.equal((await h.load('server').suggestMedication('sertralene','US')).data,'sertraline');
+});

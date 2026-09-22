@@ -6,7 +6,8 @@ import type { Change, Ingredient, Product, ProductVersion, ReportSummary } from 
 
 type Node = { tag: string; attrs: Record<string,string>; children: Node[]; text?: string };
 const arr = <T>(v:T|T[]|undefined):T[]=>v===undefined?[]:Array.isArray(v)?v:[v];
-export const normalize = (s:string)=>s.normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleUpperCase('en-US');
+import { normalize } from './search-text.ts';
+export { normalize } from './search-text.ts';
 export function sourceDate(s?:string):string|undefined {
   if(!s)return undefined;
   if(/^\d{8}$/.test(s))return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`;

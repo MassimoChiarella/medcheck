@@ -1,3 +1,4 @@
+import { searchBackfillNote } from './search-text';
 /* oxlint-disable typescript/no-explicit-any -- Official sources have heterogeneous records; mappings explicitly normalize the fields used. */
 import { InputError } from './research-input';
 import type { EvidenceItem, Product, ReportResult, ReportSummary } from './types';
@@ -56,12 +57,13 @@ export async function caReports(products:Product[],filters:ReportFilters):Promis
     const p=products[side];const chosen=filters.cvIds?.[side]||[];
     if(chosen.length){if(chosen.length>10||chosen.some(x=>!/^\d{1,10}$/.test(x)))throw new InputError('Choose up to ten valid Canadian report-dictionary entries.');const check=await db().prepare(`SELECT id FROM cv_products WHERE gen=? AND id IN (${chosen.map(()=>'?').join(',')})`).bind(gen,...chosen.map(Number)).all();if(check.results.length!==chosen.length)throw new InputError('A selected report-dictionary entry is no longer available.');selected.push(chosen);continue;}
     const names=[...new Set([p.name,p.genericName,...p.ingredients.flatMap(i=>[i.name,i.basis||''])].map(normalize).filter(Boolean))];
-    const rows=await db().prepare(`SELECT id,name,ingredients FROM cv_products WHERE gen=? AND (${names.slice(0,6).map(()=>'(name LIKE ? OR ingredients LIKE ?)').join(' OR ')}) ORDER BY name,id LIMIT 31 OFFSET ?`).bind(gen,...names.slice(0,6).flatMap(n=>{const term='%'+n.replace(/[%_]/g,'')+'%';return [term,term];}),(filters.page-1)*30).all<{id:number;name:string;ingredients:string}>();
+    const rows=await db().prepare(`SELECT id,name,ingredients FROM cv_products WHERE gen=? AND EXISTS(SELECT 1 FROM json_each(?) term WHERE instr(CASE WHEN searchText='' THEN upper(name||char(10)||ingredients) ELSE searchText END,term.value)>0) ORDER BY name,id LIMIT 31 OFFSET ?`).bind(gen,JSON.stringify(names),(filters.page-1)*30).all<{id:number;name:string;ingredients:string}>();
     candidateHasMore ||= rows.results.length>30;
     for(const r of rows.results.slice(0,30))candidates.push({side,id:String(r.id),name:r.name,ingredients:JSON.parse(r.ingredients)});
     selected.push([]);
   }
-  if(selected.some(s=>!s.length))return {...result<ReportSummary[]>([],['Select the corresponding entries in the Canada Vigilance drug dictionary. A report-dictionary name does not establish an exact DPD product, manufacturer, or formulation match.',canadaCaveat],'partial'),counts:[],countLabel:'Choose report dictionary matches',candidates,selectedCvIds:selected,sourceAsOf:state.coverage,page:filters.page,hasMore:candidateHasMore};
+  const pending=await db().prepare("SELECT 1 FROM cv_products WHERE gen=? AND searchText='' LIMIT 1").bind(gen).first();
+  if(selected.some(s=>!s.length))return {...result<ReportSummary[]>([],[...(pending?[searchBackfillNote]:[]),'Select the corresponding entries in the Canada Vigilance drug dictionary. A report-dictionary name does not establish an exact DPD product, manufacturer, or formulation match.',canadaCaveat],'partial'),counts:[],countLabel:'Choose report dictionary matches',candidates,selectedCvIds:selected,sourceAsOf:state.coverage,page:filters.page,hasMore:candidateHasMore};
   if(selected.length===2&&selected[0].some(x=>selected[1].includes(x)))throw new InputError('The same report-dictionary entry cannot satisfy both medications.');
   const ingredientRows=await db().prepare(`SELECT id,ingredients FROM cv_products WHERE gen=? AND id IN (${selected.flat().map(()=>'?').join(',')})`).bind(gen,...selected.flat().map(Number)).all<{id:number;ingredients:string}>();
   if(selected.length===2){const groups=selected.map(ids=>new Set(ingredientRows.results.filter(r=>ids.includes(String(r.id))).flatMap(r=>JSON.parse(r.ingredients) as string[]).map(normalize)));if([...groups[0]].some(i=>groups[1].has(i)))throw new InputError('These report-dictionary selections share an ingredient; co-report comparison is ambiguous.');}

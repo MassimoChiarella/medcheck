@@ -1,3 +1,4 @@
+import { productSearchText, dictionarySearchText } from './search-text';
 import { reconcileDatabaseReservations } from './database';
 import { env } from 'cloudflare:workers';
 import { db, now, hash } from './server';
@@ -20,10 +21,18 @@ async function owned(b: Record<string,unknown>) {
   return run;
 }
 export async function maintenanceAction(b: Record<string,unknown>): Promise<Response|null> {
-  if (!['maintenance-plan','maintenance-clean','maintenance-scan','maintenance-reconcile-archives','maintenance-catalogue-archives'].includes(String(b.action))) return null;
+  if (!['maintenance-search-text','maintenance-plan','maintenance-clean','maintenance-scan','maintenance-reconcile-archives','maintenance-catalogue-archives'].includes(String(b.action))) return null;
   const run = await owned(b);
   await reconcileDatabaseReservations();
   const protectedIds = await protectedImports();
+  if(b.action==='maintenance-search-text'){
+    if(!['products','cv_products','dpd_staging'].includes(String(b.table)))throw new Error('Unknown name index.');
+    const after=Number(b.after||0);if(!Number.isSafeInteger(after)||after<0)throw new Error('Invalid name index cursor.');
+    const table=String(b.table),rows=await db().prepare(`SELECT rowid AS rowId,* FROM ${table} WHERE rowid>? AND searchText='' ORDER BY rowid LIMIT 100`).bind(after).all<{rowId:number;data:string;name:string;ingredients:string}>();
+    const values=rows.results.map(r=>[r.rowId,table==='cv_products'?dictionarySearchText(r.name,r.ingredients):productSearchText(JSON.parse(r.data))]);
+    if(values.length)await db().prepare(`UPDATE ${table} SET searchText=(SELECT json_extract(value,'$[1]') FROM json_each(?) WHERE json_extract(value,'$[0]')=${table}.rowid) WHERE rowid IN(SELECT json_extract(value,'$[0]') FROM json_each(?)) AND searchText=''`).bind(JSON.stringify(values),JSON.stringify(values)).run();
+    return Response.json({complete:rows.results.length<100,updated:rows.results.length,cursor:rows.results.at(-1)?.rowId||after});
+  }
   if(b.action==='maintenance-catalogue-archives'){
     const cursor=typeof b.cursor==='string'&&b.cursor.length<=4096?b.cursor:'';
     const page=await env.FILES.list({prefix:'canada/catalogue/',limit:2,...(cursor?{cursor}:{})});

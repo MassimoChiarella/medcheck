@@ -78,6 +78,13 @@
       "when": 1790055311275,
       "tag": "0010_perfect_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790056386139,
+      "tag": "0011_secret_guardian",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 export class InputError extends Error { readonly status=400; readonly code='INVALID_INPUT'; }
-export const productIdPattern=/^(CA:\d{1,10}|US:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}:[\d-]{4,16})$/i;
+export const productIdPattern=/^(CA:\d{1,10}|US:[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}:[\d-]{4,16})$/;
 const actions=new Set(['sources','search','suggestions','product','history','version','diff','evidence','fda-label','recalls','terminology','reports']);
 export function validDate(value:string){return /^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;}
 export function validateResearch(q:URLSearchParams){

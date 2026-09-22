@@ -116,3 +116,7 @@ After deploying the archive-registry migration, run storage maintenance before i
 `CACHE_LIMIT_BYTES` defaults to 64,000,000 (supported range 1,500,000–128,000,000) and `CACHE_LIMIT_ENTRIES` to 2,000 (10–5,000). Response caches retain 7–90 days according to freshness TTL and sweep up to 100 expired eligible entries at a time. Source bytes and product history are separate from these response caches. A parsed historical label is protected until its durable archive reference exists.
 
 Database growth admission includes active imports and concurrent interactive writes. Its conservative estimates require complete-data qualification on the actual host; the provider's physical limit is the final ceiling. Maintenance reconciles only the completed write reservations covered by its size sample. It never treats SQLite free pages as a reduction in physical storage usage.
+
+### Upgrading stored name searches
+
+After applying migration 0011, run `python3 scripts/maintain_storage.py --repair-search` with your installation's `MEDCHECK_URL` and `MEDCHECK_IMPORT_TOKEN`. This resumes bounded normalization of existing product/dictionary names without changing source bytes or snapshot hashes. New imports already populate these fields. Until the backfill finishes, searches disclose incomplete Unicode coverage. Keep the scheduler disabled until the deployment's migration and data checks pass.
