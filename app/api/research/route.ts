@@ -1,5 +1,5 @@
 import { compareVersions } from '@/lib/core';
-import { aliases, caProduct, getProduct, getVersion, history, result, searchCA, searchUS, sourceStatuses, suggestMedication } from '@/lib/server';
+import { aliases, refreshProduct, getProduct, getVersion, history, result, searchCA, searchUS, sourceStatuses, suggestMedication } from '@/lib/server';
 import { caReports, evidence, fdaLabel, recalls, usReports, type ReportFilters } from '@/lib/evidence';
 export async function GET(request:Request){
   try{
@@ -12,10 +12,10 @@ export async function GET(request:Request){
       value=action==='suggestions'?await suggestMedication(query,q.get('market')==='CA'?'CA':'US'):q.get('market')==='CA'?await searchCA(query,page):await searchUS(query,page);
     }else{
       const id=q.get('id')||'';const p=await getProduct(id);
-      if(action==='product'){const updated=p.market==='CA'?await caProduct(p.identifiers.drugCode!):p;value=result(updated);}
+      if(action==='product'){const updated=await refreshProduct(p);value={...result(updated,updated.currentPresence==='absent'?['This product is absent from the latest label. Its saved identity and historical documents remain available.']:[],updated.dataStatus),fetchedAt:updated.observedAt||''};}
       else if(action==='history')value=await history(p);
       else if(action==='version'){const v=await getVersion(p,q.get('version')||'');value=result(v,v.notes,v.completeness);}
-      else if(action==='diff'){const [before,after]=await Promise.all([getVersion(p,q.get('before')||''),getVersion(p,q.get('after')||'')]);value=result({before,after,...compareVersions(before,after)},[],[before,after].some(v=>v.completeness==='unavailable')?'unavailable':[before,after].some(v=>v.completeness==='stale')?'stale':'partial');}
+      else if(action==='diff'){if(q.get('before')===q.get('after'))throw new Error('Choose two different versions.');const [before,after]=await Promise.all([getVersion(p,q.get('before')||''),getVersion(p,q.get('after')||'')]);value=result({before,after,...compareVersions(before,after)},[],[before,after].some(v=>v.completeness==='unavailable')?'unavailable':[before,after].some(v=>v.completeness==='stale')?'stale':'partial');}
       else if(action==='evidence')value=await evidence(q.get('other')?[p,await getProduct(q.get('other')!)]:[p]);
       else if(action==='fda-label')value=await fdaLabel(p);
       else if(action==='recalls')value=await recalls(p);

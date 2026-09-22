@@ -1,4 +1,5 @@
 /* oxlint-disable typescript/no-explicit-any -- Official sources have heterogeneous records; mappings explicitly normalize the fields used. */
+import { versionOrder } from './history-order';
 import { env } from 'cloudflare:workers';
 import { arr, normalize, parseSPL, sourceDate, unzipLabel } from './core';
 import type { Product, ProductVersion, Result, SourceStatus } from './types';
@@ -121,18 +122,33 @@ async function liveSearchCA(query:string,page:number):Promise<Result<Product[]>>
 }
 export async function getProduct(id:string):Promise<Product>{
   if(!/^(CA:\d{1,10}|US:[a-f0-9-]{36}:[\d-]{4,16})$/i.test(id))throw new Error('Select a valid medication product.');
-  const saved=await db().prepare('SELECT data,observed FROM products WHERE id=?').bind(id).first<{data:string;observed:string}>();if(saved&&Date.now()-Date.parse(saved.observed)<86400000)return {...JSON.parse(saved.data),observedAt:saved.observed};
+  const saved=await db().prepare('SELECT data,observed FROM products WHERE id=?').bind(id).first<{data:string;observed:string}>();if(saved)return {...JSON.parse(saved.data),observedAt:saved.observed,dataStatus:Date.now()-Date.parse(saved.observed)<86400000?'complete':'stale',currentPresence:'unknown'};
   if(id.startsWith('CA:'))return caProduct(Number(id.split(':')[1]));
   const label=await loadLabel(id.split(':')[1]);const p=label.value.products.find(p=>p.id===id);if(!p)throw new Error('This product is absent from the current label.');return {...p,dataStatus:label.stale?'stale':'complete',observedAt:label.fetched};
 }
+export async function refreshProduct(p:Product):Promise<Product>{
+  if(p.market==='CA')return caProduct(p.identifiers.drugCode!);
+  try{
+    const label=await loadLabel(p.identifiers.setid!),current=label.value.products.find(x=>x.id===p.id);
+    if(!current)return {...p,currentPresence:label.stale?'unknown':'absent',dataStatus:label.stale?'stale':'partial'};
+    return {...current,currentPresence:label.stale?'unknown':'present',dataStatus:label.stale?'stale':'complete',observedAt:label.fetched};
+  }catch{return {...p,currentPresence:'unknown',dataStatus:'stale'};}
+}
 export async function history(p:Product):Promise<Result<ProductVersion[]>>{
-  if(p.market==='CA'){const rows=await db().prepare('SELECT data FROM versions WHERE productId=? ORDER BY observed DESC').bind(p.id).all<{data:string}>();return result(rows.results.map(r=>JSON.parse(r.data)),['Canadian history starts at the first observed snapshot. It is not a complete historical formulation archive.'],'partial');}
+  if(p.market==='CA'){const rows=await db().prepare('SELECT data FROM versions WHERE productId=? ORDER BY observed DESC').bind(p.id).all<{data:string}>();return result(rows.results.map(r=>JSON.parse(r.data) as ProductVersion).sort((a,b)=>versionOrder(b,a)),['Canadian history starts at the first observed snapshot. It is not a complete historical formulation archive.'],'partial');}
   const all:ProductVersion[]=[];let page=1,last=1,stamp=now();let stale=false;
-  do{const r=await jsonSource('dailymed',`https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/${p.identifiers.setid}/history.json`,{page,pagesize:100});stamp=r.fetched;stale||=r.stale;last=Number(r.value.metadata?.total_pages||1);for(const v of arr<any>(r.value.data?.history))all.push({id:`${p.id}@${v.spl_version}`,productId:p.id,version:String(v.spl_version),publishedAt:sourceDate(v.published_date),sourceUrl:`https://dailymed.nlm.nih.gov/dailymed/getFile.cfm?type=zip&setid=${p.identifiers.setid}&version=${v.spl_version}`,completeness:'partial'});page++;if(page>100)throw new Error('Label history exceeds the supported paging limit; consult the source archive.');}while(page<=last);
+  try{do{const r=await jsonSource('dailymed',`https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/${p.identifiers.setid}/history.json`,{page,pagesize:100});stamp=r.fetched;stale||=r.stale;last=Number(r.value.metadata?.total_pages||1);for(const v of arr<any>(r.value.data?.history))all.push({id:`${p.id}@${v.spl_version}`,productId:p.id,version:String(v.spl_version),publishedAt:sourceDate(v.published_date),sourceUrl:`https://dailymed.nlm.nih.gov/dailymed/getFile.cfm?type=zip&setid=${p.identifiers.setid}&version=${v.spl_version}`,completeness:'partial'});page++;if(page>100)throw new Error('Label history exceeds the supported paging limit; consult the source archive.');}while(page<=last);}catch{
+    const saved=await db().prepare('SELECT data FROM versions WHERE productId=? ORDER BY observed DESC').bind(p.id).all<{data:string}>();
+    const local=saved.results.map(r=>JSON.parse(r.data) as ProductVersion).sort((a,b)=>versionOrder(b,a));
+    return {...result(local,['Published history could not be refreshed. Only versions previously inspected on this installation are listed.'],local.length?'partial':'unavailable'),fetchedAt:local[0]?.observedAt||'',total:local.length};
+  }
+  all.sort((a,b)=>versionOrder(b,a));
   return {...result(all,stale?['Showing cached history. The source could not be refreshed.']:[],stale?'stale':'complete'),fetchedAt:stamp,total:all.length};
 }
 export async function getVersion(p:Product,version:string):Promise<ProductVersion>{
-  if(p.market==='CA'){const r=await db().prepare('SELECT data FROM versions WHERE productId=? AND version=?').bind(p.id,version).first<{data:string}>();if(!r)throw new Error('Snapshot unavailable.');return JSON.parse(r.data);}
+  const stored=await db().prepare('SELECT data FROM versions WHERE productId=? AND version=?').bind(p.id,version).first<{data:string}>();
+  if(stored)return JSON.parse(stored.data);
+  if(p.market==='CA')throw new Error('Snapshot unavailable.');
   const parsed=await loadLabel(p.identifiers.setid!,version);const v=parsed.value.versions.find(v=>v.productId===p.id);if(!v)return{id:`${p.id}@${version}`,productId:p.id,version,sourceUrl:labelLink(p.identifiers.setid!),completeness:'unavailable',notes:['The selected product is absent from this archived version.']};return v;
 }
 export async function currentVersion(p:Product){if(p.market==='CA'){await caProduct(p.identifiers.drugCode!);const h=await history(p);return h.data[0];}const label=await loadLabel(p.identifiers.setid!);const v=label.value.versions.find(v=>v.productId===p.id);return v?{...v,observedAt:label.fetched,completeness:label.stale?'stale' as const:v.completeness}:undefined;}

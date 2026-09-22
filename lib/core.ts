@@ -1,3 +1,4 @@
+import { versionOrder } from './history-order.ts';
 import { XMLParser } from 'fast-xml-parser';
 import { unzipSync, strFromU8 } from 'fflate';
 import type { Change, Ingredient, Product, ProductVersion, ReportSummary } from './types';
@@ -58,6 +59,8 @@ export function parseSPL(xml:string, expectedSetid?:string):ParsedSPL {
 const ingredientText=(v:Ingredient[])=>[...v].sort((a,b)=>normalize(a.name).localeCompare(normalize(b.name))).map(i=>`${i.name}${i.code?' [UNII '+i.code+']':''}${i.basisCode?' [basis UNII '+i.basisCode+']':''}${i.strength?' · '+i.strength+(i.basis?' (as '+i.basis+')':''):''}`).join('\n');
 export function compareVersions(before:ProductVersion,after:ProductVersion):{changes:Change[];notes:string[]}{
   if(before.productId!==after.productId)throw new Error('Version comparisons require the same exact product.');
+  if(!Number.isFinite(versionOrder(before,after)))throw new Error('Version ordering is unavailable; read the source documents individually.');
+  if(versionOrder(before,after)>0)throw new Error('Choose the earlier record before the later record.');
   const changes:Change[]=[],notes:string[]=[];
   if(before.completeness==='unavailable'||after.completeness==='unavailable')return {changes,notes:['One selected product archive is unavailable; differences cannot be established.']};
   for(const [key,category]of[['active','active ingredients'],['inactive','inactive ingredients']] as const){

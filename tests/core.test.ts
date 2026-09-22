@@ -61,3 +61,13 @@ void test('legacy warning sections remain readable',()=>{
   const legacy=xml.replace('43685-7','34071-1');
   assert.ok(parseSPL(legacy).sections.Warnings.length>1000);
 });
+
+void test('version chronology uses numeric SPL versions and observation dates',async()=>{
+  const {versionOrder}=await import('../lib/history-order.ts');
+  const base=parsed.versions[0];
+  const versions=['10','2','8'].map(version=>({...base,version})).sort((a,b)=>versionOrder(b,a));
+  assert.deepEqual(versions.map(v=>v.version),['10','8','2']);
+  assert.throws(()=>compareVersions({...base,version:'10'},{...base,version:'2'}),/earlier/);
+  const ca={...base,productId:'CA:123',version:'2026-09-01T00:00:00Z',observedAt:'2026-09-01T00:00:00Z'};
+  assert.ok(versionOrder(ca,{...ca,version:'2026-09-02T00:00:00Z',observedAt:'2026-09-02T00:00:00Z'})<0);
+});

@@ -12,7 +12,7 @@
     "lint": "oxlint",
     "format": "oxfmt",
     "db:generate": "drizzle-kit generate",
-    "test": "node --experimental-strip-types --test tests/core.test.ts tests/local.test.mjs tests/storage.test.ts tests/research-client.test.ts tests/spelling.test.ts && python3 -m unittest discover -s tests -p \"test_*.py\"",
+    "test": "node --experimental-strip-types --test tests/core.test.ts tests/local.test.mjs tests/storage.test.ts tests/research-client.test.ts tests/spelling.test.ts tests/adapters.test.cjs && python3 -m unittest discover -s tests -p \"test_*.py\"",
     "typecheck": "tsc --noEmit",
     "dev:worker": "vinext dev",
     "setup": "node scripts/local.mjs setup",

@@ -5,6 +5,7 @@ export type Product = {
   id: string; name: string; genericName: string; market: Market;
   manufacturer: string; strength: string; form: string; route: string;
   identifiers: { ndc?: string; din?: string; setid?: string; drugCode?: number; rxcui?: string };
+  currentPresence?: 'present' | 'absent' | 'unknown';
   ingredients: Ingredient[]; sourceUrl: string; status?: string; dataStatus?: Completeness; observedAt?: string;
 };
 export type ProductVersion = {
