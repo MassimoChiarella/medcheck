@@ -4,7 +4,13 @@ sys.path.insert(0,str(pathlib.Path(__file__).parents[1]/'scripts'))
 from import_canada import post
 base=os.environ['MEDCHECK_URL'];token=os.environ['MEDCHECK_IMPORT_TOKEN']
 assert base=='http://127.0.0.1:3002' and 'medcheck-integration-' in os.environ['MEDCHECK_TEST_DIRECTORY']
-def send(**body):return post(base,token,body)
+leases={}
+def send(**body):
+    action=body['action']
+    if action=='check-begin':
+        result=post(base,token,{'protocolVersion':2,**body});leases[(body['source'],body['runId'])]=result['leaseEpoch'];return result
+    if 'runId' in body:body={'protocolVersion':2,'leaseEpoch':leases.get((body['source'],body['runId']),0),**body}
+    return post(base,token,body)
 def rejects(**body):
     try:send(**body)
     except RuntimeError:return
@@ -46,6 +52,40 @@ if active:
     assert send(action='release-state',source='cv')['release']['documents']['extract_extrait.zip']==document
 send(action='check-finish',source='cv',runId=run,outcome='unchanged')
 print('PASS: release checkpoints require active source identity and current ownership.')
+
+# Protocol v2 fences every generation mutation, including retry paths.
+a=uuid.uuid4().hex;b=uuid.uuid4().hex;gen='d'*16
+try:post(base,token,{'action':'check-begin','source':'cv','runId':a})
+except RuntimeError:pass
+else:raise AssertionError('Unversioned importer accepted')
+first=send(action='check-begin',source='cv',runId=a)
+assert send(action='check-begin',source='cv',runId=a)['leaseEpoch']==first['leaseEpoch']
+rows={'cv_products':[[101,'FENCED','[]']],'cv_reports':[[101,'FENCE',1,'2026-04-01','2026-04-01',0,'[]']],'cv_report_drugs':[[101,101,101,'FENCED','Suspect']],'cv_reactions':[[101,101,'Test']],'cv_links':[[101,101,'OTHER','Duplicate']]}
+manifest=dict(id=gen,cutoff='2026-04-30',hash=gen*4,index_hash=gen*4,transform_version='test-v1',bytes=1000,manifest={t:1 for t in rows})
+send(action='begin',source='cv',runId=a,**manifest)
+sql("UPDATE update_runs SET heartbeat='2000-01-01T00:00:00Z' WHERE source='cv'")
+send(action='check-begin',source='cv',runId=b)
+for action in ['batch','promote','fail','cleanup']:
+    rejects(action=action,source='cv',runId=a,id=gen,table='cv_products',batch=0,rows=rows['cv_products'])
+rejects(action='batch',source='cv',runId=b,id=gen,table='cv_products',batch=0,rows=rows['cv_products'])
+rejects(action='begin',source='cv',runId=b,**{**manifest,'cutoff':'2026-05-31'})
+send(action='begin',source='cv',runId=b,**manifest)
+for table,data in rows.items():send(action='batch',source='cv',runId=b,id=gen,table=table,batch=0,rows=data)
+rejects(action='promote',source='cv',runId=b,id=gen)
+assert sql("SELECT generation FROM source_state WHERE id='cv'")[0]['generation']=='5555555555555555'
+assert sql('SELECT COUNT(*) n FROM mutation_guards')[0]['n']==0
+foreign=sql("SELECT id,state FROM imports WHERE source='dpd' AND state='retired' LIMIT 1")[0]
+rejects(action='cleanup',source='cv',runId=b,id=foreign['id'],table='cv_products')
+assert sql(f"SELECT state FROM imports WHERE id='{foreign['id']}'")[0]['state']==foreign['state']
+# Same UUID after expiry obtains a new epoch; saved old credentials stay invalid.
+old_epoch=leases[('cv',b)]
+sql("UPDATE update_runs SET heartbeat='2000-01-01T00:00:00Z' WHERE source='cv'")
+rejects(action='check-begin',source='cv',runId=b)
+c=uuid.uuid4().hex
+assert send(action='check-begin',source='cv',runId=c)['leaseEpoch']>old_epoch
+rejects(action='check-heartbeat',source='cv',runId=b,leaseEpoch=old_epoch)
+send(action='check-finish',source='cv',runId=c,outcome='failed')
+print('PASS: protocol enforcement, epoch takeover, staging adoption, atomic coverage protection and source isolation.')
 
 # A shared SPL is queued once. Budget failures stay pending and completed work survives a new run.
 labels=['634ec8e3-6d83-4cb2-90a3-fc9c973b06bf','7e5e76cf-2fda-4f9d-bcbf-f77b1f188ee6']

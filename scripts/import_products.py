@@ -58,11 +58,11 @@ def import_products(args,base=None,token=None,check=None):
     print(f'{len(entries):,} human products validated; snapshot {observed}',flush=True)
     if not args.upload:return
     if check:check.phase('archiving')
-    for name in ENDPOINTS:archive_source(args.directory/(name+'.json'),base,token,'https://health-products.canada.ca/api/drug/'+name+'/?lang=en&type=json')
+    for name in ENDPOINTS:archive_source(args.directory/(name+'.json'),base,token,'https://health-products.canada.ca/api/drug/'+name+'/?lang=en&type=json',check)
     # Run identity includes observation time so A→B→A remains a new occurrence.
     generation=hashlib.sha256((digest+observed).encode()).hexdigest()[:16]
     if check:check.phase('importing')
-    run=post(base,token,{'action':'dpd-begin','id':generation,'count':len(entries),'observedAt':observed,'hash':digest,'bytes':len(json.dumps(entries,ensure_ascii=False).encode())})
+    run=check.request({'action':'dpd-begin','id':generation,'count':len(entries),'observedAt':observed,'hash':digest,'bytes':len(json.dumps(entries,ensure_ascii=False).encode())})
     if run['state']=='active':
         print('Canadian catalogue unchanged; prior complete snapshot retained.')
         if check:
@@ -71,10 +71,10 @@ def import_products(args,base=None,token=None,check=None):
         return
     generation=run['id']
     for i in range(0,len(entries),400):
-        post(base,token,{'action':'dpd','id':generation,'entries':entries[i:i+400]})
+        check.request({'action':'dpd','id':generation,'entries':entries[i:i+400]})
         if i%4000==0:print(f'{i:,} / {len(entries):,} products staged',flush=True)
-    print(post(base,token,{'action':'dpd-complete','id':generation}),flush=True)
-    while post(base,token,{'action':'dpd-cleanup'})['deleted']:pass
+    print(check.request({'action':'dpd-complete','id':generation}),flush=True)
+    while check.request({'action':'dpd-cleanup'})['deleted']:pass
     if check:save_release(check,args.directory,generation,digest)
 def save_release(check,directory,generation,digest):
     documents={name+'.json':read_metadata(directory/(name+'.json')) for name in ENDPOINTS}

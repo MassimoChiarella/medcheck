@@ -6,8 +6,9 @@ import { sources } from './sources';
 import { checkStatus, type UpdateRun } from './updates';
 import { putArchive } from './storage';
 import { isMedicationNameQuery, spellingCandidates } from './spelling';
+import { database } from './database';
 
-export const db=()=>env.DB;
+export const db=database;
 export const now=()=>new Date().toISOString();
 export async function hash(value:string|Uint8Array){const bytes=typeof value==='string'?new TextEncoder().encode(value):value;return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes as BufferSource))].map(b=>b.toString(16).padStart(2,'0')).join('');}
 export async function cached<T>(key:string,ttl:number,source:string,load:()=>Promise<T>,allowStale=true):Promise<{value:T;fetched:string;stale:boolean}>{

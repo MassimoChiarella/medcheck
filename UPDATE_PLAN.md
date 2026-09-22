@@ -68,3 +68,7 @@ Acceptance: failures are visible and recoverable, real source checks pass, the p
 - Phase 5.5 external blocker: GitHub permits source pushes and code-check runs, but its current token returns HTTP 403 for Actions Secrets, Variables and workflow dispatch. The browser is signed out. Hosted update execution cannot be claimed as verified until the owner reconnects with the required repository permissions. The same import commands passed against the private installation from this machine. No schedule-enabling action or paid upgrade was performed.
 
 - Linux release checks: [Actions run 34184300982](https://github.com/MassimoChiarella/medcheck/actions/runs/34184300982) passed lint, types, Node/Python tests, full disposable Worker integration and the production build after the hostname correction.
+
+### Import protocol compatibility
+
+Server and importer updates must be deployed together. Protocol 2 requires a fresh source check and its returned lease epoch on mutations, including archive chunks. Expired attempts must use a new run ID. A resumed Canada Vigilance generation must match its saved transformation version, index hash, complete manifest, and coverage date. Legacy unfinished generations without this identity must be reclaimed through maintenance before rebuilding; they cannot be silently adopted.

@@ -1,15 +1,17 @@
 import { db, now } from './server';
+import { IMPORT_PROTOCOL, LEASE_MS, LeaseConflict } from './database';
 
-export const CHECK_LEASE_MS = 10 * 60 * 1000;
+export const CHECK_LEASE_MS = LEASE_MS;
 export type CheckOutcome = 'running' | 'updated' | 'unchanged' | 'failed' | 'interrupted';
 export type UpdateRun = {
-  source: string; runId: string; started: string; heartbeat: string; finished: string | null;
+  source: string; runId: string; leaseEpoch: number; started: string; heartbeat: string; finished: string | null;
   lastSuccess: string | null; outcome: CheckOutcome; phase: string; error: string | null;
   cursor: string; details: string;
 };
 const checkSources = new Set(['cv', 'dpd', 'dailymed', 'maintenance']);
 const phases = new Set(['checking', 'downloading', 'validating', 'archiving', 'importing', 'refreshing', 'cleanup', 'complete']);
-export class UpdateConflict extends Error { status = 409; }
+export { LeaseConflict as UpdateConflict };
+const UpdateConflict = LeaseConflict;
 export async function noMaintenance() {
   if (await db().prepare("SELECT 1 FROM update_runs WHERE source='maintenance' AND outcome='running' AND heartbeat>?").bind(new Date(Date.now() - CHECK_LEASE_MS).toISOString()).first()) throw new UpdateConflict('Storage maintenance is running. Retry after it finishes.');
 }
@@ -46,7 +48,7 @@ export async function checkAction(b: Record<string, unknown>): Promise<Response 
     if (b.source === 'cv' && Object.values(documents)[0].hash !== active.hash) throw new Error('Source bytes do not match the active report release.');
     const details = JSON.stringify({ generation: active.id, datasetHash: active.hash, documents });
     if (details.length > 12_000) throw new Error('Release checkpoint exceeds its size limit.');
-    const saved = await db().prepare("UPDATE update_runs SET details=? WHERE source=? AND runId=? AND outcome='running' RETURNING source").bind(details, b.source, b.runId).first();
+    const saved = await db().prepare("UPDATE update_runs SET details=? WHERE source=? AND runId=? AND outcome='running' AND EXISTS(SELECT 1 FROM imports WHERE source=? AND state='active' AND id=? AND hash=?) RETURNING source").bind(details, b.source, b.runId, b.source, active.id, active.hash).first();
     if (!saved) throw new UpdateConflict('The source check lease changed while saving its release.');
     return Response.json({ saved: true });
   }
@@ -59,17 +61,20 @@ export async function checkAction(b: Record<string, unknown>): Promise<Response 
   const stamp = now(), phase = b.phase === undefined ? 'checking' : b.phase;
   if (typeof phase !== 'string' || !phases.has(phase)) throw new Error('Invalid update phase.');
   if (b.action === 'check-begin') {
+    if (b.protocolVersion !== IMPORT_PROTOCOL) throw new UpdateConflict('Import client protocol unsupported. Update this installation before retrying.');
     const cutoff = new Date(Date.now() - CHECK_LEASE_MS).toISOString();
-    const claimed = await db().prepare(`INSERT INTO update_runs(source,runId,started,heartbeat,outcome,phase)
-      SELECT ?,?,?,?,'running',? WHERE NOT EXISTS(SELECT 1 FROM update_runs WHERE outcome='running' AND heartbeat>? AND
+    const claimed = await db().prepare(`INSERT INTO update_runs(source,runId,started,heartbeat,outcome,phase,leaseEpoch)
+      SELECT ?,?,?,?,'running',?,1 WHERE NOT EXISTS(SELECT 1 FROM update_runs WHERE outcome='running' AND heartbeat>? AND
         ((?='maintenance' AND source<>'maintenance') OR (?<>'maintenance' AND source='maintenance')))
       ON CONFLICT(source) DO UPDATE SET
+      leaseEpoch=CASE WHEN update_runs.runId=excluded.runId AND update_runs.outcome='running' AND julianday(update_runs.heartbeat)>julianday('now')-10.0/1440 THEN update_runs.leaseEpoch ELSE update_runs.leaseEpoch+1 END,
       runId=excluded.runId,started=CASE WHEN update_runs.runId=excluded.runId THEN update_runs.started ELSE excluded.started END,
       heartbeat=excluded.heartbeat,finished=NULL,outcome='running',phase=excluded.phase,error=NULL
-      WHERE update_runs.outcome<>'running' OR update_runs.heartbeat<? OR update_runs.runId=excluded.runId
-      RETURNING source`).bind(b.source, b.runId, stamp, stamp, phase, cutoff, b.source, b.source, cutoff).first();
+      WHERE (update_runs.outcome<>'running' OR update_runs.heartbeat<? OR update_runs.runId=excluded.runId)
+      AND NOT(update_runs.outcome='running' AND update_runs.runId=excluded.runId AND julianday(update_runs.heartbeat)<=julianday('now')-10.0/1440)
+      RETURNING leaseEpoch`).bind(b.source, b.runId, stamp, stamp, phase, cutoff, b.source, b.source, cutoff).first();
     if (!claimed) throw new UpdateConflict('Another check for this source is still running.');
-    return Response.json({ started: true, leaseSeconds: CHECK_LEASE_MS / 1000 });
+    return Response.json({ started: true, protocolVersion: IMPORT_PROTOCOL, leaseEpoch: claimed.leaseEpoch, leaseSeconds: CHECK_LEASE_MS / 1000 });
   }
   if (b.action === 'check-heartbeat') {
     const active = await db().prepare("UPDATE update_runs SET heartbeat=?,phase=? WHERE source=? AND runId=? AND outcome='running' AND heartbeat>? RETURNING source")
@@ -80,14 +85,12 @@ export async function checkAction(b: Record<string, unknown>): Promise<Response 
   if (!['updated', 'unchanged', 'failed'].includes(String(b.outcome))) throw new Error('Invalid check outcome.');
   const success = b.outcome !== 'failed';
   const reason = success ? null : `The ${phase} phase failed. Previous successful data remains available. See the owner update log.`;
-  const completed = await db().prepare(`UPDATE update_runs SET heartbeat=?,finished=?,outcome=?,phase=?,error=?,
-    lastSuccess=CASE WHEN ? THEN ? ELSE lastSuccess END WHERE source=? AND runId=? AND outcome='running' AND heartbeat>? RETURNING source`)
-    .bind(stamp, stamp, b.outcome, phase, reason, success ? 1 : 0, stamp, b.source, b.runId, new Date(Date.now()-CHECK_LEASE_MS).toISOString()).first();
-  if (!completed) {
-    const previous = await db().prepare('SELECT outcome,finished FROM update_runs WHERE source=? AND runId=?').bind(b.source,b.runId).first<{outcome:string;finished:string}>();
-    if (previous?.finished && previous.outcome === b.outcome) return Response.json({ completed: true, outcome: b.outcome, replayed: true });
-    throw new UpdateConflict('This source check no longer owns the update lease.');
-  }
-  if (success) await db().prepare('UPDATE source_state SET lastChecked=?,error=NULL WHERE id=?').bind(stamp, b.source).run();
+  const previous = await db().prepare('SELECT outcome,finished FROM update_runs WHERE source=? AND runId=? AND leaseEpoch=?').bind(b.source,b.runId,b.leaseEpoch).first<{outcome:string;finished:string}>();
+  if (previous?.finished && previous.outcome === b.outcome) return Response.json({ completed: true, outcome: b.outcome, replayed: true });
+  const updates = [db().prepare(`UPDATE update_runs SET heartbeat=?,finished=?,outcome=?,phase=?,error=?,
+    lastSuccess=CASE WHEN ? THEN ? ELSE lastSuccess END WHERE source=? AND runId=? AND leaseEpoch=?`)
+    .bind(stamp, stamp, b.outcome, phase, reason, success ? 1 : 0, stamp, b.source, b.runId, b.leaseEpoch)];
+  if (success) updates.push(db().prepare('UPDATE source_state SET lastChecked=?,error=NULL WHERE id=?').bind(stamp, b.source));
+  await db().batch(updates);
   return Response.json({ completed: true, outcome: b.outcome });
 }

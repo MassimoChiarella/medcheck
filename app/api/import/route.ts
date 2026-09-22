@@ -1,8 +1,10 @@
+/* oxlint-disable typescript/no-explicit-any -- Authenticated import payloads are validated per action before fixed-schema mutations. */
 import { env } from 'cloudflare:workers';
 import { db, hash, now } from '@/lib/server';
 import { checkAction, UpdateConflict, noMaintenance } from '@/lib/updates';
 import { refreshAction } from '@/lib/refresh';
 import { maintenanceAction, protectedImports } from '@/lib/maintenance';
+import { currentFence, withFence, parseFence, assertLease, IMPORT_PROTOCOL } from '@/lib/database';
 import { capacity, estimatedImportBytes, writeCapacity, putArchive } from '@/lib/storage';
 
 // Fixed source tables only. The upload API never accepts SQL or arbitrary identifiers.
@@ -29,34 +31,51 @@ export async function POST(request:Request){
   try{
     const params=new URL(request.url).searchParams;
     if(params.has('sourceHash')){
+      const lease=parseFence({protocolVersion:Number(request.headers.get('x-import-protocol')),source:request.headers.get('x-import-source'),runId:request.headers.get('x-import-run'),leaseEpoch:Number(request.headers.get('x-import-epoch'))},String(request.headers.get('x-import-source')));
+      if(!['cv','dpd'].includes(lease.source))throw new UpdateConflict('Invalid archive source.');
+      return await withFence(lease,async()=>{
+      await assertLease();
       await noMaintenance();
       const sourceHash=params.get('sourceHash')!,index=Number(params.get('chunk')),expected=request.headers.get('x-content-sha256')||'';
       if(!/^[a-f0-9]{64}$/.test(sourceHash)||!/^[a-f0-9]{64}$/.test(expected)||!Number.isInteger(index)||index<0||index>200)throw new Error('Invalid source archive chunk.');
       const reader=request.body?.getReader();if(!reader)throw new Error('Missing source bytes.');const chunks:Uint8Array[]=[];let size=0;
       while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>5*1024*1024){await reader.cancel();throw new Error('Source chunk exceeds 5 MB.');}chunks.push(value);}
       const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}if(await hash(bytes)!==expected)throw new Error('Source chunk hash mismatch.');
-      await putArchive(`raw-sources/${sourceHash}/${index}`,bytes,{customMetadata:{sha256:expected}});return Response.json({accepted:true,size});
+      await putArchive(`raw-sources/${sourceHash}/${index}`,bytes,{customMetadata:{sha256:expected}});await assertLease();return Response.json({accepted:true,size});
+      });
     }
     const b=await body(request);const action=b.action;
+    if(action==='capabilities')return Response.json({protocolVersion:IMPORT_PROTOCOL});
+    const readOnly=['capacity','status','archive-status','retired','checks','release-state','validate'];
+    if(action==='check-begin'||readOnly.includes(action))return await handle(b);
+    const source=action.startsWith('dpd')?'dpd':action.startsWith('maintenance')?'maintenance':action.startsWith('refresh')?'dailymed':['check-heartbeat','check-finish','release-save','archive-complete'].includes(action)?String(b.source):'cv';
+    const fence=parseFence(b,source);
+    if(['batch','promote','fail','dpd','dpd-complete'].includes(action))fence.generation=String(b.id);
+    return await withFence(fence,async()=>{if(action!=='check-finish')await assertLease();return handle(b);});
+  }catch(e){const message=e instanceof Error?e.message:'Import failed. Previous generation retained.';return Response.json({error:message},{status:e instanceof UpdateConflict?409:/D1_ERROR|R2_ERROR|internal error/i.test(message)?503:400});}
+}
+async function handle(b:Record<string,any>){
+    const action=b.action;
     if(action==='capacity')return Response.json(await capacity());
     const check=await checkAction(b);if(check)return check;
     const maintenance=await maintenanceAction(b);if(maintenance)return maintenance;
     const refresh=await refreshAction(b);if(refresh)return refresh;
     if(!['status','archive-status','retired'].includes(action))await noMaintenance();
     if(action==='archive-status'||action==='archive-complete'){
+      if(action==='archive-complete'&&!['cv','dpd'].includes(b.source))throw new UpdateConflict('Invalid archive source.');
       if(!/^[a-f0-9]{64}$/.test(b.hash))throw new Error('Invalid source hash.');const key=`raw-sources/${b.hash}/manifest.json`;
       if(action==='archive-status')return Response.json({complete:!!await env.FILES.head(key)});
       if(!Array.isArray(b.chunks)||!b.chunks.length||b.chunks.length>201||!Number.isSafeInteger(b.bytes)||b.bytes>1_000_000_000||!String(b.sourceUrl).startsWith('https://'))throw new Error('Invalid source archive manifest.');
       let size=0;for(let i=0;i<b.chunks.length;i++){const stored=await env.FILES.head(`raw-sources/${b.hash}/${i}`);if(!stored||stored.customMetadata?.sha256!==b.chunks[i].hash||stored.size!==b.chunks[i].bytes)throw new Error('Source archive is incomplete.');size+=stored.size;}
-      if(size!==b.bytes)throw new Error('Source archive byte count mismatch.');await putArchive(key,JSON.stringify({...b,archivedAt:now()}),{httpMetadata:{contentType:'application/json'}});return Response.json({complete:true,bytes:size});
+      if(size!==b.bytes)throw new Error('Source archive byte count mismatch.');await putArchive(key,JSON.stringify({hash:b.hash,bytes:b.bytes,chunks:b.chunks,sourceUrl:b.sourceUrl}),{httpMetadata:{contentType:'application/json'}});await assertLease();return Response.json({complete:true,bytes:size});
     }
     if(action==='dpd-begin'){
       if(!/^[a-f0-9]{16}$/.test(b.id)||!/^\d{4}-\d{2}-\d{2}T/.test(b.observedAt)||!Number.isSafeInteger(b.count)||b.count<1||!/^[a-f0-9]{64}$/.test(b.hash))throw new Error('Invalid Canadian catalogue manifest.');
-      const prior=await db().prepare("SELECT id,state,created,hash FROM imports WHERE source='dpd' AND hash=? AND state IN ('active','staging') ORDER BY state LIMIT 1").bind(b.hash).first<{id:string;state:string;created:string}>();
-      if(prior){if(prior.state==='staging')await db().prepare('UPDATE imports SET touched=? WHERE id=?').bind(now(),prior.id).run();if(prior.state==='active')await db().prepare("UPDATE source_state SET lastChecked=? WHERE id='dpd'").bind(now()).run();return Response.json({id:prior.id,state:prior.state,observedAt:prior.created});}
+      const prior=await db().prepare("SELECT id,state,created,hash,manifest FROM imports WHERE source='dpd' AND hash=? AND state IN ('active','staging') ORDER BY state LIMIT 1").bind(b.hash).first<{id:string;state:string;created:string;manifest:string}>();
+      if(prior){if(JSON.parse(prior.manifest).count!==b.count)throw new Error('Generation manifest conflict.');if(prior.state==='staging')await db().prepare('UPDATE imports SET touched=?,ownerRunId=?,ownerEpoch=? WHERE id=?').bind(now(),currentFence()!.runId,currentFence()!.leaseEpoch,prior.id).run();if(prior.state==='active')await db().prepare("UPDATE source_state SET lastChecked=? WHERE id='dpd'").bind(now()).run();return Response.json({id:prior.id,state:prior.state,observedAt:prior.created});}
       const estimate=estimatedImportBytes('dpd',b.bytes??b.count*4096),space=await capacity();
-      const admitted=await db().prepare("INSERT INTO imports(id,source,state,cutoff,hash,manifest,created,touched,estimatedBytes,reservedBytes) SELECT ?,'dpd','staging',?,?,?,?,?,?,? WHERE ?+(SELECT COALESCE(SUM(reservedBytes),0) FROM imports WHERE state='staging')+?<=? RETURNING id")
-        .bind(b.id,b.observedAt.slice(0,10),b.hash,JSON.stringify({count:b.count}),b.observedAt,now(),estimate,estimate,space.databaseBytes,estimate,space.limitBytes).first();
+      const admitted=await db().prepare("INSERT INTO imports(id,source,state,cutoff,hash,manifest,created,touched,estimatedBytes,reservedBytes,ownerRunId,ownerEpoch) SELECT ?,'dpd','staging',?,?,?,?,?,?,?,?,? WHERE ?+(SELECT COALESCE(SUM(reservedBytes),0) FROM imports WHERE state='staging')+?<=? RETURNING id")
+        .bind(b.id,b.observedAt.slice(0,10),b.hash,JSON.stringify({count:b.count}),b.observedAt,now(),estimate,estimate,currentFence()!.runId,currentFence()!.leaseEpoch,space.databaseBytes,estimate,space.limitBytes).first();
       if(!admitted)throw new Error('Insufficient database headroom for the complete catalogue. Previous data retained.');
       return Response.json({id:b.id,state:'staging',observedAt:b.observedAt});
     }
@@ -99,22 +118,24 @@ export async function POST(request:Request){
     }
     const id=String(b.id||'');if(!/^[a-f0-9]{16}$/.test(id))throw new Error('Invalid import generation.');
     if(action==='status'){
-      const run=await db().prepare('SELECT * FROM imports WHERE id=?').bind(id).first();const batches=await db().prepare('SELECT tableName,MAX(batchId) AS lastBatch,SUM(rows) AS rows FROM import_batches WHERE importId=? GROUP BY tableName').bind(id).all();return Response.json({run,batches:batches.results,databaseBytes:batches.meta.size_after});
+      const run=await db().prepare("SELECT * FROM imports WHERE source='cv' AND id=?").bind(id).first();const batches=await db().prepare('SELECT tableName,MAX(batchId) AS lastBatch,SUM(rows) AS rows FROM import_batches WHERE importId=? GROUP BY tableName').bind(id).all();return Response.json({run,batches:batches.results,databaseBytes:batches.meta.size_after});
     }
     if(action==='begin'){
+      if(typeof b.transform_version!=='string'||b.transform_version.length>100||!b.transform_version||!/^[a-f0-9]{64}$/.test(b.index_hash))throw new Error('A versioned transform and index hash are required.');
+      const identity=JSON.stringify({transform:b.transform_version,indexHash:b.index_hash});
       if(!/^\d{4}-\d{2}-\d{2}$/.test(b.cutoff)||!/^[a-f0-9]{64}$/.test(b.hash))throw new Error('Invalid source manifest.');
       if(!b.manifest||Object.keys(tables).some(t=>!Number.isSafeInteger(b.manifest[t])||b.manifest[t]<=0)||!Number.isSafeInteger(b.bytes)||b.bytes>8_000_000_000)throw new Error('The complete dataset must fit within the configured 8 GB import ceiling.');
-      const existing=await db().prepare('SELECT hash,state FROM imports WHERE id=?').bind(id).first<{hash:string;state:string}>();if(existing){if(existing.hash!==b.hash)throw new Error('Generation content conflict.');if(existing.state!=='abandoned'){if(existing.state==='staging')await db().prepare('UPDATE imports SET touched=? WHERE id=?').bind(now(),id).run();return Response.json({id,state:existing.state,resumed:true});}}
+      const existing=await db().prepare('SELECT hash,state,source FROM imports WHERE id=?').bind(id).first<{hash:string;state:string;source:string}>();if(existing){if(existing.source!=='cv')throw new Error('Generation source conflict.');if(existing.hash!==b.hash)throw new Error('Generation content conflict.');if(existing.state!=='abandoned'){if(existing.state==='staging'){const prior=await db().prepare('SELECT manifest,cutoff,identity FROM imports WHERE id=?').bind(id).first<{manifest:string;cutoff:string;identity:string}>();if(!prior||Object.keys(tables).some(t=>JSON.parse(prior.manifest)[t]!==b.manifest[t])||prior.cutoff!==b.cutoff||prior.identity!==identity)throw new Error('Generation manifest conflict.');await db().prepare('UPDATE imports SET touched=?,ownerRunId=?,ownerEpoch=? WHERE id=?').bind(now(),currentFence()!.runId,currentFence()!.leaseEpoch,id).run();}return Response.json({id,state:existing.state,resumed:true});}}
       // Admission only accepts a validated full-source manifest; no sample mode exists.
       const estimate=estimatedImportBytes('cv',b.bytes),space=await capacity();
-      const admitted=await db().prepare("INSERT INTO imports(id,source,state,cutoff,hash,manifest,created,touched,estimatedBytes,reservedBytes) SELECT ?,'cv','staging',?,?,?,?,?,?,? WHERE ?+(SELECT COALESCE(SUM(reservedBytes),0) FROM imports WHERE state='staging')+?<=? ON CONFLICT(id) DO UPDATE SET state='staging',manifest=excluded.manifest,created=excluded.created,touched=excluded.touched,estimatedBytes=excluded.estimatedBytes,reservedBytes=excluded.reservedBytes,error=NULL WHERE imports.state='abandoned' RETURNING id")
-        .bind(id,b.cutoff,b.hash,JSON.stringify(b.manifest),now(),now(),estimate,estimate,space.databaseBytes,estimate,space.limitBytes).first();
+      const admitted=await db().prepare("INSERT INTO imports(id,source,state,cutoff,hash,manifest,created,touched,estimatedBytes,reservedBytes,ownerRunId,ownerEpoch,identity) SELECT ?,'cv','staging',?,?,?,?,?,?,?,?,?,? WHERE ?+(SELECT COALESCE(SUM(reservedBytes),0) FROM imports WHERE state='staging')+?<=? ON CONFLICT(id) DO UPDATE SET state='staging',manifest=excluded.manifest,created=excluded.created,touched=excluded.touched,estimatedBytes=excluded.estimatedBytes,reservedBytes=excluded.reservedBytes,ownerRunId=excluded.ownerRunId,ownerEpoch=excluded.ownerEpoch,identity=excluded.identity,error=NULL WHERE imports.state='abandoned' RETURNING id")
+        .bind(id,b.cutoff,b.hash,JSON.stringify(b.manifest),now(),now(),estimate,estimate,currentFence()!.runId,currentFence()!.leaseEpoch,identity,space.databaseBytes,estimate,space.limitBytes).first();
       if(!admitted)throw new Error('Insufficient database headroom for the complete report release. Previous data retained.');
       return Response.json({id,state:'staging'});
     }
-    const run=await db().prepare('SELECT * FROM imports WHERE id=?').bind(id).first<{state:string;manifest:string;cutoff:string;estimatedBytes:number}>();if(!run)throw new Error('Begin an import before uploading.');
+    const run=await db().prepare("SELECT * FROM imports WHERE source='cv' AND id=?").bind(id).first<{state:string;manifest:string;cutoff:string;estimatedBytes:number}>();if(!run)throw new Error('Begin an import before uploading.');
     if(action==='fail'){
-      const reason=String(b.error||'Scheduled import failed.').slice(0,500);await db().batch([db().prepare('UPDATE imports SET error=? WHERE id=?').bind(reason,id),db().prepare('INSERT INTO source_state(id,lastChecked,error) VALUES(\'cv\',?,?) ON CONFLICT(id) DO UPDATE SET lastChecked=excluded.lastChecked,error=excluded.error').bind(now(),reason)]);return Response.json({retainedPreviousGeneration:true});
+      const reason='Scheduled import failed. Previous successful data remains available. See the owner update log.';await db().batch([db().prepare('UPDATE imports SET error=? WHERE id=?').bind(reason,id),db().prepare('INSERT INTO source_state(id,lastChecked,error) VALUES(\'cv\',?,?) ON CONFLICT(id) DO UPDATE SET lastChecked=excluded.lastChecked,error=excluded.error').bind(now(),reason)]);return Response.json({retainedPreviousGeneration:true});
     }
     if(action==='batch'){
       await writeCapacity();
@@ -142,6 +163,7 @@ export async function POST(request:Request){
       await db().batch([db().prepare("UPDATE imports SET state='retired' WHERE source='cv' AND state='active'"),db().prepare("UPDATE imports SET state='active',completed=? WHERE id=?").bind(now(),id),db().prepare("UPDATE source_state SET generation=?,coverage=?,lastChecked=?,error='An operator restored the previous complete dataset.' WHERE id='cv'").bind(id,run.cutoff,now())]);return Response.json({state:'active',id,rolledBack:true});
     }
     if(action==='promote'){
+      currentFence()!.minimumCoverage=run.cutoff;
       if(run.state==='active')return Response.json({id,state:'active',replayed:true});
       if(run.state!=='staging')throw new Error('A retired or restored generation cannot be automatically promoted. Use explicit operator rollback or await a newer source release.');
       const expected=JSON.parse(run.manifest);const totals=await db().prepare('SELECT tableName,SUM(rows) AS n FROM import_batches WHERE importId=? GROUP BY tableName').bind(id).all<{tableName:string;n:number}>();if(Object.keys(tables).some(t=>totals.results.find(x=>x.tableName===t)?.n!==expected[t]))throw new Error('Import is incomplete. Previous dataset retained.');
@@ -163,5 +185,4 @@ export async function POST(request:Request){
       return Response.json({deleted:r.meta.changes});
     }
     throw new Error('Unknown import action.');
-  }catch(e){const message=e instanceof Error?e.message:'Import failed. Previous generation retained.';return Response.json({error:message},{status:e instanceof UpdateConflict?409:/D1_ERROR|R2_ERROR|internal error/i.test(message)?503:400});}
 }

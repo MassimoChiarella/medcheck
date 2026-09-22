@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
-import { db } from './server';
+import { db, hash } from './server';
+import { assertLease } from './database';
 import { CHECK_LEASE_MS, noMaintenance } from './updates';
 
 export function estimatedImportBytes(source: 'cv' | 'dpd', bytes: number) {
@@ -29,7 +30,13 @@ export function archiveLimit() {
 export async function putArchive(key: string, value: string | Uint8Array, options?: R2PutOptions) {
   await noMaintenance();
   const old = await env.FILES.head(key), size = typeof value === 'string' ? new TextEncoder().encode(value).byteLength : value.byteLength;
-  const growth = Math.max(0, size - (old?.size || 0));
+  const digest = await hash(value);
+  if(old){
+    const oldDigest=old.customMetadata?.sha256 || (old.size===size ? await hash(new Uint8Array(await (await env.FILES.get(key))!.arrayBuffer())) : '');
+    if(old.size!==size || oldDigest!==digest)throw new Error('Immutable archive content conflict.');
+    await assertLease();return old;
+  }
+  const growth = size;
   if (growth) {
     const meter = await db().prepare("SELECT key FROM cache WHERE key='storage:r2'").first();
     if (!meter) {
@@ -42,5 +49,9 @@ export async function putArchive(key: string, value: string | Uint8Array, option
       .bind(growth, growth, archiveLimit(),new Date(Date.now()-CHECK_LEASE_MS).toISOString()).first();
     if (!reserved) throw new Error('Archive storage ceiling reached. Referenced source documents were retained; no storage upgrade was made.');
   }
-  return env.FILES.put(key, value, options);
+  await assertLease();
+  const stored=await env.FILES.put(key, value, {...options,customMetadata:{...options?.customMetadata,sha256:digest},onlyIf:{etagDoesNotMatch:'*'}});
+  await assertLease();
+  if(!stored){const existing=await env.FILES.head(key);if(!existing||existing.size!==size||existing.customMetadata?.sha256!==digest)throw new Error('Immutable archive content conflict.');return existing;}
+  return stored;
 }

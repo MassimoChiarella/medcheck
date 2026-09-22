@@ -9,7 +9,7 @@ class SourceCheck:
         self.source,self.base,self.token,self.post=source,base,token,post
         self.run_id=uuid.uuid4().hex
         self.phase_name='checking';self.outcome='updated';self.started=timestamp()
-        self.directory=directory;self.stop=threading.Event();self.thread=None;self.heartbeat_error=None
+        self.lease_epoch=None;self.directory=directory;self.stop=threading.Event();self.thread=None;self.heartbeat_error=None
 
     def record(self,outcome,error=None):
         self.directory.mkdir(parents=True,exist_ok=True)
@@ -18,12 +18,28 @@ class SourceCheck:
         path=self.directory/(self.source+'.json');temp=path.with_suffix('.tmp')
         temp.write_text(json.dumps(value,indent=2)+'\n');temp.replace(path)
 
+    def ensure_active(self):
+        if self.heartbeat_error:raise RuntimeError('Source check heartbeat failed; retry with a new lease.') from self.heartbeat_error
+
+    def credentials(self):
+        return {'protocolVersion':2,'source':self.source,'runId':self.run_id,'leaseEpoch':self.lease_epoch}
+
     def send(self,action,**fields):
-        return self.post(self.base,self.token,{'action':action,'source':self.source,'runId':self.run_id,'phase':self.phase_name,**fields})
+        # Terminal status is still attempted after producer cancellation; the server fence
+        # rejects lost ownership, while ordinary validation failures release a valid lease.
+        if action!='check-finish':self.ensure_active()
+        return self.post(self.base,self.token,{'action':action,'phase':self.phase_name,**self.credentials(),**fields},check=None if action=='check-finish' else self)
+
+    def request(self,payload):
+        self.ensure_active()
+        return self.post(self.base,self.token,{**payload,**self.credentials()},check=self)
+
 
     def __enter__(self):
         self.record('running')
-        try:self.send('check-begin')
+        try:
+            started=self.send('check-begin');self.lease_epoch=started['leaseEpoch']
+            if started.get('protocolVersion')!=2:raise RuntimeError('Update this installation to the current import protocol.')
         except Exception:
             self.record('failed','Could not start an authenticated source check.');raise
         self.thread=threading.Thread(target=self.heartbeat,daemon=True);self.thread.start()

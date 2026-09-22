@@ -5,9 +5,11 @@ import hashlib,json,sys,urllib.request,urllib.error,os
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from import_canada import post
+from update_run import SourceCheck
 base=os.environ['MEDCHECK_URL'];token=os.environ['MEDCHECK_IMPORT_TOKEN']
 assert base in ('http://localhost:3002','http://127.0.0.1:3002'), 'Isolated local test port required'
-def send(**body):return post(base,token,body)
+checks={s:SourceCheck(s,base,token,post).__enter__() for s in ['cv','dpd']}
+def send(**body):return checks['dpd' if body['action'].startswith('dpd') else 'cv'].request(body)
 def rejected(**body):
     try:send(**body)
     except RuntimeError:return
@@ -16,7 +18,7 @@ def get(**params):
     from urllib.parse import urlencode
     with urllib.request.urlopen(base+'/api/research?'+urlencode(params)) as response:return json.load(response)
 def source():return next(x for x in get(action='sources')['data'] if x['id']=='cv')
-def manifest(gen):return dict(id=gen,cutoff='2026-05-31',hash=gen*4,bytes=1000,manifest={t:1 for t in rows})
+def manifest(gen):return dict(id=gen,cutoff='2026-05-31',hash=gen*4,index_hash=gen*4,transform_version='test-v1',bytes=1000,manifest={t:1 for t in rows})
 rows={'cv_products':[[1,'TEST A','["A"]']],'cv_reports':[[1,'TEST',2,'2026-05-01','2026-05-02',1,'[]']],'cv_report_drugs':[[1,1,1,'TEST A','Suspect']],'cv_reactions':[[1,1,'Test reaction']],'cv_links':[[1,1,'OTHER','Duplicate']]}
 try:
     with urllib.request.urlopen(urllib.request.Request(base+'/api/import',data=b'{}',headers={'Content-Type':'application/json'})):raise AssertionError('Unauthenticated import accepted')
@@ -77,6 +79,8 @@ with tempfile.TemporaryDirectory() as directory:
     connection.commit();connection.close()
     gen='5555555555555555';m={**manifest(gen),'manifest':{t:3 for t in TABLES},'batch_size':2}
     send(action='begin',**m);send(action='batch',id=gen,table='cv_products',batch=0,rows=rows['cv_products'])
-    upload(path,m,base,token)
+    upload(path,m,base,token,checks['cv'])
     assert send(action='status',id=gen)['run']['state']=='active'
 print('PASS: authentication boundary, bounds, idempotency, interrupted import, promotion, retained data, rollback, unchanged snapshots, leading-zero DIN and A→B→A history.')
+
+for check in checks.values():check.__exit__(None,None,None)

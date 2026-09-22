@@ -43,8 +43,9 @@ class DownloadTests(unittest.TestCase):
         digest='a'*64;generation=hashlib.sha256((digest+':'+import_canada.TRANSFORM_VERSION).encode()).hexdigest()[:16]
         document={'hash':digest,'bytes':10,'etag':None,'lastModified':'Wed, 02 Sep 2026 11:59:19 GMT','verifiedAt':datetime.datetime.now(datetime.timezone.utc).isoformat()}
         calls=[]
-        def post(base,token,body):
+        def post(base,token,body,check=None):
             calls.append(body)
+            if body['action']=='check-begin':return {'leaseEpoch':1,'protocolVersion':2}
             if body['action']=='release-state':return {'active':{'id':generation,'hash':digest},'release':{'documents':{'extract_extrait.zip':document}}}
             if body['action']=='archive-status':return {'complete':True}
             return {}

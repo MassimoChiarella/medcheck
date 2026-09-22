@@ -126,13 +126,14 @@ class NoImportRedirect(urllib.request.HTTPRedirectHandler):
 
 IMPORT_HTTP=urllib.request.build_opener(NoImportRedirect())
 
-def post(base,token,payload):
+def post(base,token,payload,check=None):
     base=validate_target(base,token)
     raw=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode()
     headers={'Content-Type':'application/json','Authorization':'Bearer '+token}
     # Private review deployments can use an existing owner-supplied Sites token.
     if os.getenv('SITES_AUTHORIZATION'):headers['OAI-Sites-Authorization']='Bearer '+os.environ['SITES_AUTHORIZATION']
     for attempt in range(5):
+        if check:check.ensure_active()
         try:
             with IMPORT_HTTP.open(urllib.request.Request(base+'/api/import',data=raw,headers=headers),timeout=180) as response:return json.load(response)
         except urllib.error.HTTPError as e:
@@ -143,29 +144,34 @@ def post(base,token,payload):
             if attempt==4:raise
         time.sleep(min(30,2**attempt))
 
-def archive_source(path,base,token,source_url):
+def archive_source(path,base,token,source_url,check):
     base=validate_target(base,token)
     digest=hashlib.sha256()
     with open(path,'rb') as source:
         while chunk:=source.read(5*1024*1024):digest.update(chunk)
     full_hash=digest.hexdigest()
-    if post(base,token,{'action':'archive-status','hash':full_hash})['complete']:return
+    if check.request({'action':'archive-status','hash':full_hash})['complete']:return
     chunks=[]
     with open(path,'rb') as source:
         while chunk:=source.read(5*1024*1024):
             chunk_hash=hashlib.sha256(chunk).hexdigest();index=len(chunks)
-            headers={'Authorization':'Bearer '+token,'Content-Type':'application/octet-stream','X-Content-SHA256':chunk_hash}
+            check.ensure_active()
+            headers={'X-Import-Protocol':'2','X-Import-Source':check.source,'X-Import-Run':check.run_id,'X-Import-Epoch':str(check.lease_epoch),'Authorization':'Bearer '+token,'Content-Type':'application/octet-stream','X-Content-SHA256':chunk_hash}
             if os.getenv('SITES_AUTHORIZATION'):headers['OAI-Sites-Authorization']='Bearer '+os.environ['SITES_AUTHORIZATION']
             url=base.rstrip('/')+'/api/import?sourceHash='+full_hash+'&chunk='+str(index)
             for attempt in range(5):
+                check.ensure_active()
                 try:
                     with IMPORT_HTTP.open(urllib.request.Request(url,data=chunk,headers=headers),timeout=180) as response:json.load(response)
                     break
+                except urllib.error.HTTPError as error:
+                    if error.code not in (429,500,502,503,504) or attempt==4:raise
+                    time.sleep(2**attempt)
                 except (urllib.error.URLError,TimeoutError):
                     if attempt==4:raise
                     time.sleep(2**attempt)
             chunks.append({'hash':chunk_hash,'bytes':len(chunk)})
-    post(base,token,{'action':'archive-complete','hash':full_hash,'sourceUrl':source_url,'filename':path.name,'bytes':path.stat().st_size,'chunks':chunks})
+    check.request({'action':'archive-complete','hash':full_hash,'sourceUrl':source_url,'filename':path.name,'bytes':path.stat().st_size,'chunks':chunks})
     print('Source bytes archived:',path.name,flush=True)
 
 def bounded_batches(cursor,max_rows=12000,max_bytes=1_500_000):
@@ -178,10 +184,10 @@ def bounded_batches(cursor,max_rows=12000,max_bytes=1_500_000):
         rows.append(row);size+=count
     if rows:yield rows
 
-def upload(path,manifest,base,token):
-    cleanup(base,token)
-    gen=manifest['id'];post(base,token,{'action':'begin',**manifest})
-    status=post(base,token,{'action':'status','id':gen})
+def upload(path,manifest,base,token,check):
+    cleanup(base,token,check)
+    gen=manifest['id'];check.request({'action':'begin',**manifest})
+    status=check.request({'action':'status','id':gen})
     if status['run']['state']=='active':print('Current dataset already active.');return False
     if status['run']['state']!='staging':raise RuntimeError('This source generation was retired or rolled back; a scheduled run cannot reactivate it. Await a newer release or explicitly restore a retained generation.')
     last={x['tableName']:x for x in status['batches']};batch_size=12000
@@ -190,28 +196,36 @@ def upload(path,manifest,base,token):
             prior=last.get(table,{'rows':0,'lastBatch':-1});count=prior['rows']
             cursor=conn.execute(f'SELECT * FROM {table} ORDER BY id LIMIT -1 OFFSET ?',(count,))
             for number,batch in enumerate(bounded_batches(cursor,batch_size),start=prior['lastBatch']+1):
-                post(base,token,{'action':'batch','id':gen,'table':table,'batch':number,'rows':batch})
+                check.request({'action':'batch','id':gen,'table':table,'batch':number,'rows':batch})
                 count+=len(batch)
                 if (number+1)%100==0:print(f'{table}: {count:,} / {manifest["manifest"][table]:,}',flush=True)
-            post(base,token,{'action':'validate','id':gen,'table':table})
+            check.request({'action':'validate','id':gen,'table':table})
             print(f'{table}: complete ({count:,} rows)',flush=True)
     try:
         # Three independent tables at a time; each table's acknowledged batches stay ordered.
         from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=3) as pool:list(pool.map(upload_table,TABLES))
-        response=post(base,token,{'action':'promote','id':gen});print(json.dumps(response),flush=True)
-        cleanup(base,token)
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            jobs=[pool.submit(upload_table,table) for table in TABLES]
+            try:
+                from concurrent.futures import as_completed
+                for job in as_completed(jobs):job.result()
+            except Exception as error:
+                check.heartbeat_error=error
+                for job in jobs:job.cancel()
+                raise
+        response=check.request({'action':'promote','id':gen});print(json.dumps(response),flush=True)
+        cleanup(base,token,check)
         return True
     except Exception as e:
-        try:post(base,token,{'action':'fail','id':gen,'error':str(e)[:500]})
+        try:check.request({'action':'fail','id':gen,'error':str(e)[:500]})
         except Exception:pass
         raise
 
-def cleanup(base,token):
-    retired=post(base,token,{'action':'retired'})
+def cleanup(base,token,check):
+    retired=check.request({'action':'retired'})
     for run in retired['generations']:
         for table in TABLES:
-            while post(base,token,{'action':'cleanup','id':run['id'],'table':table})['deleted']:pass
+            while check.request({'action':'cleanup','id':run['id'],'table':table})['deleted']:pass
 
 
 def refresh(base,token,check=None):
@@ -258,8 +272,8 @@ def main():
                 else:
                     if not archive.exists():document=download_source(SOURCE,archive,1_000_000_000,force=True)
                     check.phase('validating');output=args.workdir/'canada.sqlite';manifest=build(archive,output)
-                    check.phase('archiving');archive_source(archive,base,token,SOURCE)
-                    check.phase('importing');changed=upload(output,manifest,base,token)
+                    check.phase('archiving');archive_source(archive,base,token,SOURCE,check)
+                    check.phase('importing');changed=upload(output,manifest,base,token,check)
                     check.outcome='updated' if changed else 'unchanged'
                     generation=manifest['id']
                 check.send('release-save',generation=generation,datasetHash=document['hash'],documents={'extract_extrait.zip':document})
